@@ -17,10 +17,12 @@ export interface CustomerRow {
 }
 
 export interface BusinessOwnerRow {
+  OperatorID?: number | string;
   Email: string;
   BusinessName: string;
   OwnerName: string;
   Contact: string;
+  Password?: string | null;
 }
 
 // Allergen Types
