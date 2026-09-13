@@ -73,7 +73,7 @@ async function findOwner(email: string, password?: string) {
   let query = supabase
     .from('BUSINESS_OWNER')
     .select('OperatorID, Email, BusinessName, OwnerName, Contact, Password')
-    .eq('Email', email);
+    .ilike('Email', email);
   if (password) query = query.eq('Password', password);
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(messageFromError(error, 'Could not load the owner profile.'));
