@@ -70,14 +70,23 @@ async function findCustomerByCredentials(email: string, password: string) {
 }
 
 async function findOwner(email: string, password?: string) {
-  let query = supabase
+  const normalizedEmail = email.trim().toLowerCase();
+  const { data, error } = await supabase
     .from('BUSINESS_OWNER')
     .select('OperatorID, Email, BusinessName, OwnerName, Contact, Password')
-    .ilike('Email', email);
-  if (password) query = query.eq('Password', password);
-  const { data, error } = await query.maybeSingle();
-  if (error) throw new Error(messageFromError(error, 'Could not load the owner profile.'));
-  return data as BusinessOwnerRow | null;
+    .ilike('Email', normalizedEmail)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(messageFromError(error, 'Could not load the owner profile from Supabase.'));
+  }
+
+  const owner = data as BusinessOwnerRow | null;
+  if (!owner || password === undefined) return owner;
+
+  const storedPassword = String(owner.Password ?? '').trim();
+  return storedPassword === password.trim() ? owner : null;
 }
 
 export async function signUpAccount(input: {
