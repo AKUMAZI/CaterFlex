@@ -1,5 +1,5 @@
 // User and Role Types
-export type UserRole = 'owner' | 'customer';
+export type UserRole = 'owner' | 'customer' | 'admin';
 
 export interface User {
   id: string;
@@ -102,7 +102,7 @@ export interface Booking {
   customerId: string;
   customerName: string;
   customerEmail: string;
-  orderType: OrderType;
+  orderType?: OrderType;
   eventDate: string;
   eventTime: string;
   eventType: string;

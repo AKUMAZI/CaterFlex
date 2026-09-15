@@ -13,6 +13,8 @@ import {
   Home,
   Settings,
   Activity,
+  Users,
+  Shield,
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -35,7 +37,13 @@ export function Sidebar() {
     { href: '/customer/status', label: 'My Bookings', icon: Activity },
   ];
 
-  const links = currentRole === 'owner' ? ownerLinks : customerLinks;
+  const adminLinks = [
+    { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/admin/users', label: 'Users', icon: Users },
+    { href: '/admin/settings', label: 'Settings', icon: Shield },
+  ];
+
+  const links = currentRole === 'owner' ? ownerLinks : currentRole === 'admin' ? adminLinks : customerLinks;
 
   return (
     <aside

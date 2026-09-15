@@ -443,7 +443,7 @@ export const mockPayments: Payment[] = [
 
 export function buildInitialBookings(): Booking[] {
   const normalized: Booking[] = mockBookings.map((booking) => ({
-    orderType: 'catering' as const,
+    orderType: booking.orderType ?? 'catering',
     ...booking,
   }));
   return normalized.map((booking) =>
