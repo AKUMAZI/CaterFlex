@@ -11,8 +11,18 @@ export function TopNav() {
   const { currentRole, currentUser } = useAppState();
 
   const handleSignOut = async () => {
-    await signOutAccount();
-    router.push('/login');
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      const data = await response.json();
+      if (response.ok && data.redirectUrl) {
+        router.push(data.redirectUrl);
+      } else {
+        router.push('/login');
+      }
+    } catch {
+      await signOutAccount();
+      router.push('/login');
+    }
   };
 
   return (

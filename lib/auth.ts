@@ -294,6 +294,8 @@ export async function signInAccount(input: {
       };
     }
 
+    await supabase.auth.updateUser({ data: { role: 'owner' } });
+
     const user: User = {
       id: authData.user.id,
       name: owner.OwnerName,
@@ -330,6 +332,69 @@ export async function signOutAccount() {
   useAppState.getState().setCurrentUser(null);
   useAppState.getState().setCurrentRole('customer');
   useAppState.getState().clearCustomerSession();
+}
+
+export async function signInAdmin(email: string, password: string): Promise<AuthResult> {
+  try {
+    // Sign out any existing session first
+    await supabase.auth.signOut();
+
+    const {
+      data: authData,
+      error: authError,
+    } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      return {
+        ok: false,
+        error: messageFromError(authError, 'Invalid admin email or password.'),
+      };
+    }
+
+    if (!authData.user || !authData.session) {
+      await supabase.auth.signOut();
+      return {
+        ok: false,
+        error: 'Admin authentication succeeded, but no session was created.',
+      };
+    }
+
+    const userRole = authData.user.user_metadata?.role;
+
+    if (userRole !== 'admin') {
+      await supabase.auth.signOut();
+      return {
+        ok: false,
+        error: 'You do not have administrator access.',
+      };
+    }
+
+    const user: User = {
+      id: authData.user.id,
+      name: authData.user.email || 'Administrator',
+      email: authData.user.email || '',
+      role: 'admin',
+    };
+
+    appUser(user);
+
+    return {
+      ok: true,
+      user,
+    };
+  } catch (error) {
+    await supabase.auth.signOut();
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Could not authenticate as administrator.',
+    };
+  }
 }
 
 export async function restoreSession() {
