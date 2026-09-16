@@ -62,13 +62,15 @@ export default function BrowsePage() {
         }
 
         // Get menu item ↔ allergy relationships
-        const { data: allergyRelations, error: allergyRelationError } =
-          await supabase
-            .from('MENU_ITEM_ALLERGY')
-            .select(`
-              MenuItemID,
-              AllergyTagID
-            `);
+        const {
+          data: allergyRelations,
+          error: allergyRelationError,
+        } = await supabase
+          .from('MENU_ITEM_ALLERGY')
+          .select(`
+            MenuItemID,
+            AllergyTagID
+          `);
 
         if (allergyRelationError) {
           console.error(
@@ -84,13 +86,15 @@ export default function BrowsePage() {
         }
 
         // Get allergy tag names
-        const { data: allergyTags, error: allergyTagError } =
-          await supabase
-            .from('ALLERGY_TAG')
-            .select(`
-              AllergyTagID,
-              AllergenName
-            `);
+        const {
+          data: allergyTags,
+          error: allergyTagError,
+        } = await supabase
+          .from('ALLERGY_TAG')
+          .select(`
+            AllergyTagID,
+            AllergenName
+          `);
 
         if (allergyTagError) {
           console.error(
@@ -105,7 +109,7 @@ export default function BrowsePage() {
           return;
         }
 
-        // Convert database menu items into the application's MenuItem format
+        // Convert database menu items into application's MenuItem format
         const formattedItems: MenuItem[] = (menuData ?? []).map((item) => {
           const itemAllergyRelations = (allergyRelations ?? []).filter(
             (relation) => relation.MenuItemID === item.MenuItemID
@@ -130,8 +134,8 @@ export default function BrowsePage() {
             prepTimeDays: Number(item.PrepTimeDays ?? 0),
             allergyTags: itemAllergyNames as MenuItem['allergyTags'],
 
-            // These are not currently stored in MENU_ITEM,
-            // so keep the existing application defaults.
+            // These are not currently stored in MENU_ITEM.
+            // Keep the existing application defaults.
             macros: {
               calories: 0,
               protein: 0,
@@ -151,7 +155,6 @@ export default function BrowsePage() {
         console.error('Unexpected menu loading error:', error);
         alert('Something went wrong while loading the menu.');
       } finally {
-        // Always stop the loading state
         setLoadingMenu(false);
       }
     };
@@ -176,7 +179,7 @@ export default function BrowsePage() {
         return;
       }
 
-      // Get the customer's saved allergy relationships
+      // Get customer's saved allergy relationships
       const {
         data: customerAllergies,
         error: customerAllergyError,
@@ -204,7 +207,7 @@ export default function BrowsePage() {
         return;
       }
 
-      // Get the actual allergen names
+      // Get actual allergen names
       const {
         data: allergyTags,
         error: allergyTagError,
@@ -238,14 +241,14 @@ export default function BrowsePage() {
   }, [currentUser?.id, setDietaryRestrictions]);
 
   /*
-   * Get the currently selected menu items.
+   * Get currently selected menu items.
    */
   const selectedItems = dbMenuItems.filter((item) =>
     selectedMenuItemIds.includes(item.id)
   );
 
   /*
-   * Check selected items against the customer's allergies.
+   * Check selected items against customer's allergies.
    */
   const conflictingAllergens = getUniqueConflictingAllergens(
     selectedItems,
@@ -265,11 +268,29 @@ export default function BrowsePage() {
     setIsSubmitting(true);
 
     try {
+      /*
+       * Get and validate booking information.
+       */
+      const eventDate = String(
+        customerBookingDraft.eventDate ?? ''
+      ).trim();
+
+      const eventTime = String(
+        customerBookingDraft.eventTime ?? ''
+      ).trim();
+
+      const venue = String(
+        customerBookingDraft.venue ?? ''
+      ).trim();
+
       const guestCount = parseInt(
         String(customerBookingDraft.guestCount || '1'),
         10
       );
 
+      /*
+       * Validate customer account.
+       */
       if (!currentUser?.id) {
         alert(
           'Unable to identify your customer account. Please log in again.'
@@ -288,10 +309,51 @@ export default function BrowsePage() {
         return;
       }
 
-      // CaterFlex currently uses one operator.
+      /*
+       * Validate event information.
+       */
+      if (!eventDate) {
+        alert(
+          'Please select an event date before submitting your booking.'
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!eventTime) {
+        alert(
+          'Please select an event time before submitting your booking.'
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!venue) {
+        alert(
+          'Please enter the event venue before submitting your booking.'
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!Number.isFinite(guestCount) || guestCount <= 0) {
+        alert('Please enter a valid guest count.');
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      /*
+       * CaterFlex currently uses one operator.
+       */
       const operatorId = 2;
 
-      // Make sure the selected menu items actually exist in Supabase.
+      /*
+       * Make sure the selected menu items actually exist in Supabase.
+       */
       const validMenuItemIds = selectedMenuItemIds.filter(
         (menuItemId) =>
           dbMenuItems.some((item) => item.id === menuItemId)
@@ -307,32 +369,43 @@ export default function BrowsePage() {
       /*
        * Create BOOKING
        */
-      const { data: booking, error: bookingError } =
-        await supabase
-          .from('BOOKING')
-          .insert({
-            CustomerID: customerId,
-            OperatorID: operatorId,
-            EventDate: String(
-              customerBookingDraft.eventDate ?? ''
-            ),
-            EventTime: String(
-              customerBookingDraft.eventTime ?? ''
-            ),
-            Venue: String(
-              customerBookingDraft.venue ?? ''
-            ),
-            GuestCount: guestCount,
-            Status: 'pending',
-          })
-          .select('BookingID')
-          .single();
+      const {
+        data: booking,
+        error: bookingError,
+      } = await supabase
+        .from('BOOKING')
+        .insert({
+          CustomerID: customerId,
+          OperatorID: operatorId,
+          EventDate: eventDate,
+          EventTime: eventTime,
+          Venue: venue,
+          GuestCount: guestCount,
+          Status: 'pending',
+        })
+        .select('BookingID')
+        .single();
 
       if (bookingError || !booking) {
-        console.error(
-          'BOOKING INSERT ERROR:',
-          bookingError
-        );
+        /*
+         * Print the actual Supabase error fields.
+         */
+        console.error('BOOKING INSERT ERROR:', {
+          message: bookingError?.message,
+          details: bookingError?.details,
+          hint: bookingError?.hint,
+          code: bookingError?.code,
+        });
+
+        console.error('BOOKING DATA SENT:', {
+          CustomerID: customerId,
+          OperatorID: operatorId,
+          EventDate: eventDate,
+          EventTime: eventTime,
+          Venue: venue,
+          GuestCount: guestCount,
+          Status: 'pending',
+        });
 
         alert(
           `Booking failed: ${
@@ -345,8 +418,12 @@ export default function BrowsePage() {
         return;
       }
 
+      console.log('BOOKING CREATED:', {
+        bookingId: booking.BookingID,
+      });
+
       /*
-       * Create BOOKING_ITEM records
+       * Create BOOKING_ITEM records.
        */
       const bookingItems = validMenuItemIds.map(
         (menuItemId) => ({
@@ -356,35 +433,154 @@ export default function BrowsePage() {
         })
       );
 
-      const { error: bookingItemsError } =
-        await supabase
-          .from('BOOKING_ITEM')
-          .insert(bookingItems);
+      const {
+        error: bookingItemsError,
+      } = await supabase
+        .from('BOOKING_ITEM')
+        .insert(bookingItems);
 
       if (bookingItemsError) {
         console.error(
-          'Booking item insert error:',
-          bookingItemsError
+          'BOOKING_ITEM INSERT ERROR:',
+          {
+            message: bookingItemsError.message,
+            details: bookingItemsError.details,
+            hint: bookingItemsError.hint,
+            code: bookingItemsError.code,
+          }
         );
 
-        // Remove the booking if its items failed to save.
+        // Remove booking if its items failed to save.
         await supabase
           .from('BOOKING')
           .delete()
           .eq('BookingID', booking.BookingID);
 
         alert(
-          'Failed to save the selected menu items. Please try again.'
+          `Failed to save the selected menu items: ${bookingItemsError.message}`
         );
 
         setIsSubmitting(false);
         return;
       }
 
+      console.log(
+        'BOOKING ITEMS CREATED:',
+        bookingItems
+      );
+
+      /*
+       * Calculate invoice total.
+       *
+       * Existing CaterFlex pricing logic:
+       * menu item price × number of guests.
+       */
+      const totalAmount = validMenuItemIds.reduce(
+        (sum, menuItemId) => {
+          const menuItem = dbMenuItems.find(
+            (item) => item.id === menuItemId
+          );
+
+          return (
+            sum +
+            Number(menuItem?.price ?? 0) * guestCount
+          );
+        },
+        0
+      );
+
+      console.log(
+        'CALCULATED INVOICE TOTAL:',
+        {
+          guestCount,
+          validMenuItemIds,
+          totalAmount,
+        }
+      );
+
+      /*
+       * Check current Supabase Auth session.
+       *
+       * Customer login currently uses the CUSTOMER table,
+       * not Supabase Auth, so this may be null.
+       */
+      const {
+        data: sessionData,
+      } = await supabase.auth.getSession();
+
+      console.log(
+        'SUPABASE SESSION BEFORE INVOICE:',
+        {
+          hasSession: !!sessionData.session,
+          userId: sessionData.session?.user?.id,
+          email: sessionData.session?.user?.email,
+        }
+      );
+
+      /*
+       * Create INVOICE.
+       */
+      const {
+        data: invoice,
+        error: invoiceError,
+      } = await supabase
+        .from('INVOICE')
+        .insert({
+          BookingID: booking.BookingID,
+          TotalAmount: totalAmount,
+          DateGenerated: new Date().toISOString(),
+        })
+        .select(
+          'InvoiceID, BookingID, TotalAmount, DateGenerated'
+        )
+        .single();
+
+      if (invoiceError || !invoice) {
+        console.error('INVOICE INSERT ERROR:', {
+          message: invoiceError?.message,
+          details: invoiceError?.details,
+          hint: invoiceError?.hint,
+          code: invoiceError?.code,
+        });
+
+        console.error('INVOICE DATA SENT:', {
+          BookingID: booking.BookingID,
+          TotalAmount: totalAmount,
+          DateGenerated: new Date().toISOString(),
+        });
+
+        // Remove booking items first.
+        await supabase
+          .from('BOOKING_ITEM')
+          .delete()
+          .eq('BookingID', booking.BookingID);
+
+        // Then remove booking.
+        await supabase
+          .from('BOOKING')
+          .delete()
+          .eq('BookingID', booking.BookingID);
+
+        alert(
+          `Failed to generate the invoice: ${
+            invoiceError?.message ??
+            'Unable to create the invoice.'
+          }`
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      console.log('INVOICE CREATED:', invoice);
+
+      /*
+       * Booking successfully created.
+       */
       setShowBookingSuccess(true);
     } catch (err) {
       console.error(
-        'Unexpected booking error:',
+        'UNEXPECTED BOOKING ERROR:',
         err
       );
 
@@ -486,7 +682,7 @@ export default function BrowsePage() {
 
                     <div className="flex items-center justify-between">
                       <span className="text-lg font-bold text-primary">
-                        ${item.price}
+                        ₱{item.price.toFixed(2)}
                       </span>
                     </div>
 
