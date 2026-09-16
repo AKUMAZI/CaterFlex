@@ -2,7 +2,7 @@
 
 import { FormEvent, Suspense, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 
 const fieldClass =
@@ -29,15 +29,18 @@ function AdminLoginForm() {
     setError('');
 
     try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-      );
-
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      const signInRequest = supabase.auth.signInWithPassword({
         email,
         password,
       });
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('SIGN_IN_TIMEOUT')), 10000)
+      );
+
+      const { data, error: signInError } = await Promise.race([
+        signInRequest,
+        timeout,
+      ]);
 
       if (signInError) {
         setError('Invalid email or password.');
