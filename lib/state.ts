@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import { supabase } from './supabase';
+
 import {
   mockOperatorSettings,
   mockMenuItems,
@@ -21,7 +23,6 @@ import {
   OperatorSettings,
   Payment,
   Invoice,
-  PaymentType,
 } from './types';
 
 import {
@@ -30,8 +31,20 @@ import {
   syncMenuInventoryStatus,
 } from './alerts';
 
-import { validateBooking } from './rules/bookingValidation';
-import { generateInvoice, getPaymentsTotal } from './rules/invoices';
+const OPERATOR_ID = 2;
+
+const DAY_OF_WEEK_VALUES = [0, 1, 2, 3, 4, 5, 6] as const;
+
+type OperatorSettingsRow = {
+  SettingID: number;
+  OperatorID: number | null;
+  DayOfWeek: string;
+  OperatingStartTime: string | null;
+  OperatingEndTime: string | null;
+  MaxCateringEventsPerDay: number | null;
+  MaxMealPrepOrdersPerDay: number | null;
+  MaxGuestCountPerEvent: number | null;
+};
 
 function refreshDerivedState(state: {
   bookings: Booking[];
@@ -57,13 +70,124 @@ function refreshDerivedState(state: {
   };
 }
 
-/*
- * TEMPORARY INITIAL DATA
+/**
+ * Converts PostgreSQL time values such as "08:00:00"
+ * into the "HH:MM" format expected by the UI.
+ */
+function timeToHHMM(time: string | null): string {
+  if (!time) return '';
+
+  return time.slice(0, 5);
+}
+
+/**
+ * Converts OPERATOR_SETTINGS database rows into
+ * the OperatorSettings structure used by the
+ * booking validation system.
  *
- * These are still being used by the existing owner/admin
- * functionality while we gradually move the system to Supabase.
+ * Database:
+ *   one row per day
  *
- * Customer booking submission is being moved to Supabase separately.
+ * Application:
+ *   one settings object containing day-based records
+ */
+function settingsFromRows(
+  rows: OperatorSettingsRow[]
+): OperatorSettings {
+  const firstRow = rows[0];
+
+  const operatingDays = rows
+    .filter(
+      (row) => (row.MaxCateringEventsPerDay ?? 0) > 0
+    )
+    .map(
+      (row) =>
+        Number(row.DayOfWeek) as
+          | 0
+          | 1
+          | 2
+          | 3
+          | 4
+          | 5
+          | 6
+    )
+    .sort();
+
+  const maxEventsPerDay: Record<
+    0 | 1 | 2 | 3 | 4 | 5 | 6,
+    number
+  > = {
+    0: 0,
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0,
+  };
+
+  const maxMealPrepFulfillmentsPerDay: Record<
+    0 | 1 | 2 | 3 | 4 | 5 | 6,
+    number
+  > = {
+    0: 0,
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0,
+  };
+
+  for (const row of rows) {
+    const day = Number(row.DayOfWeek);
+
+    if (
+      !DAY_OF_WEEK_VALUES.includes(
+        day as (typeof DAY_OF_WEEK_VALUES)[number]
+      )
+    ) {
+      continue;
+    }
+
+    const typedDay =
+      day as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+    maxEventsPerDay[typedDay] =
+      row.MaxCateringEventsPerDay ?? 0;
+
+    maxMealPrepFulfillmentsPerDay[typedDay] =
+      row.MaxMealPrepOrdersPerDay ?? 0;
+  }
+
+  return {
+    operatingDays,
+
+    operatingHoursStart: timeToHHMM(
+      firstRow?.OperatingStartTime ?? null
+    ),
+
+    operatingHoursEnd: timeToHHMM(
+      firstRow?.OperatingEndTime ?? null
+    ),
+
+    maxEventsPerDay,
+
+    maxGuestsPerEvent:
+      firstRow?.MaxGuestCountPerEvent ?? 100,
+
+    maxMealPrepFulfillmentsPerDay,
+  };
+}
+
+/**
+ * Temporary initial data.
+ *
+ * These remain temporarily because some parts of the
+ * application still use Zustand for UI state and alerts.
+ *
+ * Database-backed pages do not use these values as
+ * their source of truth.
  */
 const initialBookings = buildInitialBookings();
 
@@ -99,41 +223,19 @@ interface AppState {
 
   toggleRole: () => void;
 
-  createBooking: (booking: Booking) => void;
+  /**
+   * Still used by Customer Active Orders.
+   * This currently updates the local booking state.
+   */
   updateBooking: (
     bookingId: string,
     updates: Partial<Booking>
   ) => void;
 
-  confirmBooking: (bookingId: string) => boolean;
-  rejectBooking: (bookingId: string) => void;
-
-  addMenuItem: (item: MenuItem) => void;
-  updateMenuItem: (
-    itemId: string,
-    updates: Partial<MenuItem>
-  ) => void;
-  deleteMenuItem: (itemId: string) => void;
-
-  updateIngredientStock: (
-    ingredientId: string,
-    newStock: number
-  ) => void;
-
-  updateOperatorSettings: (
-    updates: Partial<OperatorSettings>
-  ) => void;
-
-  recordPayment: (
-    bookingId: string,
-    amount: number,
-    type: PaymentType,
-    notes?: string
-  ) => void;
-
-  getInvoiceForBooking: (
-    bookingId: string
-  ) => Invoice | undefined;
+  /**
+   * Loads the current operator settings from Supabase.
+   */
+  loadOperatorSettings: () => Promise<void>;
 
   selectMenuItem: (itemId: string) => void;
   deselectMenuItem: (itemId: string) => void;
@@ -156,434 +258,253 @@ interface AppState {
   regenerateAlerts: () => void;
 }
 
-export const useAppState = create<AppState>((set, get) => ({
-  currentRole: 'customer',
-  currentUser: null,
+export const useAppState = create<AppState>(
+  (set, get) => ({
+    currentRole: 'customer',
+    currentUser: null,
 
-  bookings: initialBookings,
-  menuItems: initialMenuItems,
-  ingredients: mockIngredients,
-  operatorSettings: mockOperatorSettings,
-  payments: mockPayments,
-  invoices: initialInvoices,
-
-  alerts: buildAlerts({
     bookings: initialBookings,
     menuItems: initialMenuItems,
     ingredients: mockIngredients,
     operatorSettings: mockOperatorSettings,
-  }),
+    payments: mockPayments,
+    invoices: initialInvoices,
 
-  selectedMenuItemIds: [],
-  customerDietaryRestrictions: [],
-  customerBookingDraft: {},
-  customerOrderType: 'catering',
-
-  setCurrentRole: (role) =>
-    set({
-      currentRole: role,
+    alerts: buildAlerts({
+      bookings: initialBookings,
+      menuItems: initialMenuItems,
+      ingredients: mockIngredients,
+      operatorSettings: mockOperatorSettings,
     }),
 
-  setCurrentUser: (user) =>
-    set({
-      currentUser: user,
-    }),
+    selectedMenuItemIds: [],
+    customerDietaryRestrictions: [],
+    customerBookingDraft: {},
+    customerOrderType: 'catering',
 
-  toggleRole: () =>
-    set((state) => ({
-      currentRole:
-        state.currentRole === 'owner'
-          ? 'customer'
-          : 'owner',
-    })),
+    setCurrentRole: (role) =>
+      set({
+        currentRole: role,
+      }),
 
-  createBooking: (booking) => {
-    const state = get();
+    setCurrentUser: (user) =>
+      set({
+        currentUser: user,
+      }),
 
-    const validated = applyBookingValidation(
-      booking,
-      state.operatorSettings,
-      state.bookings,
-      state.menuItems,
-      state.ingredients
-    );
+    /**
+     * Loads OPERATOR_SETTINGS from Supabase.
+     */
+    loadOperatorSettings: async () => {
+      const { data, error } = await supabase
+        .from('OPERATOR_SETTINGS')
+        .select(`
+          SettingID,
+          OperatorID,
+          DayOfWeek,
+          OperatingStartTime,
+          OperatingEndTime,
+          MaxCateringEventsPerDay,
+          MaxMealPrepOrdersPerDay,
+          MaxGuestCountPerEvent
+        `)
+        .eq('OperatorID', OPERATOR_ID)
+        .order('DayOfWeek');
 
-    const bookings = [
-      ...state.bookings,
-      validated,
-    ];
-
-    const next = {
-      ...state,
-      bookings,
-    };
-
-    const derived = refreshDerivedState(next);
-
-    set({
-      bookings,
-      ...derived,
-    });
-  },
-
-  updateBooking: (bookingId, updates) => {
-    const state = get();
-
-    const bookings = state.bookings.map((b) => {
-      if (b.id !== bookingId) {
-        return b;
+      if (error) {
+        console.error(
+          'Failed to load OPERATOR_SETTINGS:',
+          error
+        );
+        return;
       }
 
-      const merged = {
-        ...b,
-        ...updates,
-      };
+      if (!data || data.length === 0) {
+        console.error(
+          `No OPERATOR_SETTINGS rows found for OperatorID ${OPERATOR_ID}.`
+        );
+        return;
+      }
 
-      return applyBookingValidation(
-        merged,
-        state.operatorSettings,
-        state.bookings,
-        state.menuItems,
-        state.ingredients
-      );
-    });
+      const operatorSettings =
+        settingsFromRows(
+          data as OperatorSettingsRow[]
+        );
 
-    const next = {
-      ...state,
-      bookings,
-    };
+      const state = get();
 
-    const derived = refreshDerivedState(next);
-
-    set({
-      bookings,
-      ...derived,
-    });
-  },
-
-  confirmBooking: (bookingId) => {
-    const state = get();
-
-    const booking = state.bookings.find(
-      (b) => b.id === bookingId
-    );
-
-    if (
-      !booking ||
-      booking.status !== 'pending'
-    ) {
-      return false;
-    }
-
-    const validated = applyBookingValidation(
-      booking,
-      state.operatorSettings,
-      state.bookings,
-      state.menuItems,
-      state.ingredients
-    );
-
-    if (!validated.validationPassed) {
-      const bookings = state.bookings.map((b) =>
-        b.id === bookingId
-          ? validated
-          : b
+      /*
+       * Revalidate existing local bookings using
+       * the newly loaded database settings.
+       */
+      const bookings = state.bookings.map(
+        (booking) =>
+          applyBookingValidation(
+            booking,
+            operatorSettings,
+            state.bookings,
+            state.menuItems,
+            state.ingredients
+          )
       );
 
       const next = {
         ...state,
+        operatorSettings,
         bookings,
       };
 
       set({
+        operatorSettings,
         bookings,
         ...refreshDerivedState(next),
       });
+    },
 
-      return false;
-    }
+    toggleRole: () =>
+      set((state) => ({
+        currentRole:
+          state.currentRole === 'owner'
+            ? 'customer'
+            : 'owner',
+      })),
 
-    const confirmed: Booking = {
-      ...validated,
-      status: 'confirmed',
-      confirmedAt: new Date().toISOString(),
-    };
+    /**
+     * Updates a customer's existing booking in
+     * the local Zustand state.
+     *
+     * Customer Active Orders still uses this
+     * functionality. Database synchronization for
+     * this flow can be handled separately.
+     */
+    updateBooking: (
+      bookingId,
+      updates
+    ) => {
+      const state = get();
 
-    const bookings = state.bookings.map((b) =>
-      b.id === bookingId
-        ? confirmed
-        : b
-    );
+      const bookings = state.bookings.map(
+        (booking) => {
+          if (
+            booking.id !== bookingId
+          ) {
+            return booking;
+          }
 
-    const invoice = generateInvoice(
-      confirmed,
-      state.menuItems,
-      state.payments
-    );
+          const merged = {
+            ...booking,
+            ...updates,
+          };
 
-    const next = {
-      ...state,
-      bookings,
-      invoices: [
-        ...state.invoices,
-        invoice,
-      ],
-    };
+          return applyBookingValidation(
+            merged,
+            state.operatorSettings,
+            state.bookings,
+            state.menuItems,
+            state.ingredients
+          );
+        }
+      );
 
-    set({
-      bookings,
-      invoices: next.invoices,
-      ...refreshDerivedState(next),
-    });
-
-    return true;
-  },
-
-  rejectBooking: (bookingId) =>
-    set((state) => {
       const next = {
         ...state,
-
-        bookings: state.bookings.map((b) =>
-          b.id === bookingId
-            ? {
-                ...b,
-                status: 'rejected' as const,
-              }
-            : b
-        ),
+        bookings,
       };
 
-      return refreshDerivedState(next);
-    }),
+      const derived =
+        refreshDerivedState(next);
 
-  addMenuItem: (item) =>
-    set((state) => {
-      const next = {
-        ...state,
-        menuItems: [
-          ...state.menuItems,
-          item,
+      set({
+        bookings,
+        ...derived,
+      });
+    },
+
+    /**
+     * Select a menu item for the current
+     * customer booking.
+     */
+    selectMenuItem: (itemId) =>
+      set((state) => ({
+        selectedMenuItemIds: [
+          ...state.selectedMenuItemIds,
+          itemId,
         ],
-      };
+      })),
 
-      return refreshDerivedState(next);
-    }),
+    /**
+     * Remove a menu item from the current
+     * customer booking.
+     */
+    deselectMenuItem: (itemId) =>
+      set((state) => ({
+        selectedMenuItemIds:
+          state.selectedMenuItemIds.filter(
+            (id) => id !== itemId
+          ),
+      })),
 
-  updateMenuItem: (itemId, updates) =>
-    set((state) => {
-      const next = {
-        ...state,
+    /**
+     * Save the customer's dietary restrictions
+     * in the current booking session.
+     */
+    setDietaryRestrictions: (
+      restrictions
+    ) =>
+      set({
+        customerDietaryRestrictions:
+          restrictions,
+      }),
 
-        menuItems: state.menuItems.map((m) =>
-          m.id === itemId
-            ? {
-                ...m,
-                ...updates,
-              }
-            : m
-        ),
-      };
+    /**
+     * Save the current customer's booking
+     * information in the temporary session state.
+     */
+    setCustomerBookingDraft: (
+      draft
+    ) =>
+      set({
+        customerBookingDraft: draft,
+      }),
 
-      return refreshDerivedState(next);
-    }),
+    /**
+     * Set the customer's selected order type.
+     */
+    setCustomerOrderType: (type) =>
+      set({
+        customerOrderType: type,
+      }),
 
-  deleteMenuItem: (itemId) =>
-    set((state) => {
-      const isReferenced =
-        state.bookings.some((booking) =>
-          booking.selectedMenuItemIds.includes(
-            itemId
-          )
-        );
+    /**
+     * Clears customer-only temporary state
+     * after a booking or meal-prep submission.
+     */
+    clearCustomerSession: () =>
+      set({
+        selectedMenuItemIds: [],
+        customerDietaryRestrictions: [],
+        customerBookingDraft: {},
+        customerOrderType: 'catering',
+      }),
 
-      if (isReferenced) {
-        return state;
-      }
+    /**
+     * Replace the current alert list.
+     */
+    updateAlerts: (alerts) =>
+      set({
+        alerts,
+      }),
 
-      const next = {
-        ...state,
+    /**
+     * Rebuild derived menu inventory status
+     * and alerts.
+     */
+    regenerateAlerts: () => {
+      const state = get();
 
-        menuItems: state.menuItems.filter(
-          (m) => m.id !== itemId
-        ),
-      };
-
-      return refreshDerivedState(next);
-    }),
-
-  updateIngredientStock: (
-    ingredientId,
-    newStock
-  ) =>
-    set((state) => {
-      const next = {
-        ...state,
-
-        ingredients: state.ingredients.map(
-          (i) =>
-            i.id === ingredientId
-              ? {
-                  ...i,
-                  currentStock: newStock,
-                }
-              : i
-        ),
-      };
-
-      return refreshDerivedState(next);
-    }),
-
-  updateOperatorSettings: (updates) =>
-    set((state) => {
-      const operatorSettings = {
-        ...state.operatorSettings,
-        ...updates,
-      };
-
-      const bookings = state.bookings.map(
-        (b) =>
-          applyBookingValidation(
-            b,
-            operatorSettings,
-            state.bookings
-          )
+      set(
+        refreshDerivedState(state)
       );
-
-      const next = {
-        ...state,
-        operatorSettings,
-        bookings,
-      };
-
-      return {
-        operatorSettings,
-        bookings,
-        ...refreshDerivedState(next),
-      };
-    }),
-
-  recordPayment: (
-    bookingId,
-    amount,
-    type,
-    notes
-  ) =>
-    set((state) => {
-      const payment: Payment = {
-        id: `pay-${Date.now()}`,
-        bookingId,
-        amount,
-        date: new Date().toISOString(),
-        type,
-        notes,
-      };
-
-      const payments = [
-        ...state.payments,
-        payment,
-      ];
-
-      const totalPaid = getPaymentsTotal(
-        payments,
-        bookingId
-      );
-
-      const bookings = state.bookings.map(
-        (b) =>
-          b.id === bookingId
-            ? {
-                ...b,
-                paymentsReceived: totalPaid,
-              }
-            : b
-      );
-
-      const invoices = state.invoices.map(
-        (inv) =>
-          inv.bookingId === bookingId
-            ? {
-                ...inv,
-                paymentsMade: totalPaid,
-                balanceDue: Math.max(
-                  inv.totalDue - totalPaid,
-                  0
-                ),
-              }
-            : inv
-      );
-
-      return {
-        payments,
-        bookings,
-        invoices,
-      };
-    }),
-
-  getInvoiceForBooking: (bookingId) => {
-    const state = get();
-
-    return state.invoices.find(
-      (inv) =>
-        inv.bookingId === bookingId
-    );
-  },
-
-  selectMenuItem: (itemId) =>
-    set((state) => ({
-      selectedMenuItemIds: [
-        ...state.selectedMenuItemIds,
-        itemId,
-      ],
-    })),
-
-  deselectMenuItem: (itemId) =>
-    set((state) => ({
-      selectedMenuItemIds:
-        state.selectedMenuItemIds.filter(
-          (id) => id !== itemId
-        ),
-    })),
-
-  setDietaryRestrictions: (restrictions) =>
-    set({
-      customerDietaryRestrictions:
-        restrictions,
-    }),
-
-  setCustomerBookingDraft: (draft) =>
-    set({
-      customerBookingDraft: draft,
-    }),
-
-  setCustomerOrderType: (type) =>
-    set({
-      customerOrderType: type,
-    }),
-
-  clearCustomerSession: () =>
-    set({
-      selectedMenuItemIds: [],
-      customerDietaryRestrictions: [],
-      customerBookingDraft: {},
-      customerOrderType: 'catering',
-    }),
-
-  updateAlerts: (alerts) =>
-    set({
-      alerts,
-    }),
-
-  regenerateAlerts: () => {
-    const state = get();
-
-    set(
-      refreshDerivedState(state)
-    );
-  },
-}));
-
-export {
-  validateBooking,
-  applyBookingValidation,
-};
+    },
+  })
+);

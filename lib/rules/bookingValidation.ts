@@ -7,7 +7,6 @@ export interface BookingRuleFailure {
     | 'dailyCapacity'
     | 'guestCount'
     | 'mealPrepCapacity'
-    | 'servingsLimit'
     | 'allergenConflict'
     | 'ingredientSufficiency';
   message: string;
@@ -118,12 +117,6 @@ export function validateBooking(
       });
     }
 
-    if (booking.guestCount > settings.maxServingsPerMealPrepOrder) {
-      failures.push({
-        rule: 'servingsLimit',
-        message: `Servings per cycle (${booking.guestCount}) exceeds maximum of ${settings.maxServingsPerMealPrepOrder} for a meal-prep order`,
-      });
-    }
 
     return { passed: failures.length === 0, failures };
   }

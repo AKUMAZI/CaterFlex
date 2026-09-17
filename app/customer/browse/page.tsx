@@ -264,108 +264,256 @@ export default function BrowsePage() {
     if (isSubmitting) {
       return;
     }
-
+  
     setIsSubmitting(true);
-
+  
     try {
-      /*
-       * Get and validate booking information.
-       */
       const eventDate = String(
         customerBookingDraft.eventDate ?? ''
       ).trim();
-
+  
       const eventTime = String(
         customerBookingDraft.eventTime ?? ''
       ).trim();
-
+  
       const venue = String(
         customerBookingDraft.venue ?? ''
       ).trim();
-
+  
       const guestCount = parseInt(
         String(customerBookingDraft.guestCount || '1'),
         10
       );
-
-      /*
-       * Validate customer account.
-       */
+  
+      // Validate customer account
       if (!currentUser?.id) {
         alert(
           'Unable to identify your customer account. Please log in again.'
         );
-
         setIsSubmitting(false);
         return;
       }
-
+  
       const customerId = Number(currentUser.id);
-
+  
       if (Number.isNaN(customerId)) {
         alert('Invalid customer account. Please log in again.');
-
         setIsSubmitting(false);
         return;
       }
-
-      /*
-       * Validate event information.
-       */
-      if (!eventDate) {
-        alert(
-          'Please select an event date before submitting your booking.'
-        );
-
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (!eventTime) {
-        alert(
-          'Please select an event time before submitting your booking.'
-        );
-
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (!venue) {
-        alert(
-          'Please enter the event venue before submitting your booking.'
-        );
-
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (!Number.isFinite(guestCount) || guestCount <= 0) {
-        alert('Please enter a valid guest count.');
-
-        setIsSubmitting(false);
-        return;
-      }
-
-      /*
-       * CaterFlex currently uses one operator.
-       */
-      const operatorId = 2;
-
-      /*
-       * Make sure the selected menu items actually exist in Supabase.
-       */
+  
+      // Validate menu selection
       const validMenuItemIds = selectedMenuItemIds.filter(
         (menuItemId) =>
           dbMenuItems.some((item) => item.id === menuItemId)
       );
-
+  
       if (validMenuItemIds.length === 0) {
         alert('Please select at least one valid menu item.');
-
         setIsSubmitting(false);
         return;
       }
-
+  
+      // CaterFlex currently uses one operator.
+      const operatorId = 2;
+  
+      /*
+       * ============================================================
+       * MEAL PREP
+       * ============================================================
+       */
+      if (
+        customerBookingDraft.orderType === 'meal_prep'
+      ) {
+        const mealPrepFrequency =
+          customerBookingDraft.mealPrepFrequency || 'weekly';
+  
+        if (!eventDate) {
+          alert(
+            'Please select a starting fulfillment date before submitting your meal prep order.'
+          );
+          setIsSubmitting(false);
+          return;
+        }
+  
+        if (!eventTime) {
+          alert(
+            'Please select a fulfillment time before submitting your meal prep order.'
+          );
+          setIsSubmitting(false);
+          return;
+        }
+  
+        if (!Number.isFinite(guestCount) || guestCount <= 0) {
+          alert(
+            'Please enter a valid number of servings per cycle.'
+          );
+          setIsSubmitting(false);
+          return;
+        }
+  
+        /*
+         * MEAL_PREP_ORDER only contains:
+         * CustomerID
+         * OperatorID
+         * RecurrencePattern
+         * MealsPerCycle
+         * Status
+         */
+        const {
+          data: mealPrepOrder,
+          error: mealPrepOrderError,
+        } = await supabase
+          .from('MEAL_PREP_ORDER')
+          .insert({
+            CustomerID: customerId,
+            OperatorID: operatorId,
+            RecurrencePattern: mealPrepFrequency,
+            MealsPerCycle: guestCount,
+            Status: 'pending',
+          })
+          .select('MealPrepOrderID')
+          .single();
+  
+        if (mealPrepOrderError || !mealPrepOrder) {
+          console.error(
+            'MEAL_PREP_ORDER INSERT ERROR:',
+            {
+              message: mealPrepOrderError?.message,
+              details: mealPrepOrderError?.details,
+              hint: mealPrepOrderError?.hint,
+              code: mealPrepOrderError?.code,
+            }
+          );
+  
+          console.error(
+            'MEAL_PREP_ORDER DATA SENT:',
+            {
+              CustomerID: customerId,
+              OperatorID: operatorId,
+              RecurrencePattern: mealPrepFrequency,
+              MealsPerCycle: guestCount,
+              Status: 'pending',
+            }
+          );
+  
+          alert(
+            `Meal prep order failed: ${
+              mealPrepOrderError?.message ??
+              'Unable to create the meal prep order.'
+            }`
+          );
+  
+          setIsSubmitting(false);
+          return;
+        }
+  
+        console.log('MEAL PREP ORDER CREATED:', {
+          mealPrepOrderId: mealPrepOrder.MealPrepOrderID,
+          startDate: eventDate,
+          fulfillmentTime: eventTime,
+          frequency: mealPrepFrequency,
+        });
+  
+        /*
+         * Create MEAL_PREP_ITEM records.
+         *
+         * The current menu selection UI selects each menu item once,
+         * so Quantity is set to 1.
+         */
+        const mealPrepItems = validMenuItemIds.map(
+          (menuItemId) => ({
+            MealPrepOrderID: mealPrepOrder.MealPrepOrderID,
+            MenuItemID: Number(menuItemId),
+            Quantity: 1,
+          })
+        );
+  
+        const {
+          error: mealPrepItemsError,
+        } = await supabase
+          .from('MEAL_PREP_ITEM')
+          .insert(mealPrepItems);
+  
+        if (mealPrepItemsError) {
+          console.error(
+            'MEAL_PREP_ITEM INSERT ERROR:',
+            {
+              message: mealPrepItemsError.message,
+              details: mealPrepItemsError.details,
+              hint: mealPrepItemsError.hint,
+              code: mealPrepItemsError.code,
+            }
+          );
+  
+          // Remove the parent order if its items failed.
+          await supabase
+            .from('MEAL_PREP_ORDER')
+            .delete()
+            .eq(
+              'MealPrepOrderID',
+              mealPrepOrder.MealPrepOrderID
+            );
+  
+          alert(
+            `Failed to save the selected meal prep items: ${mealPrepItemsError.message}`
+          );
+  
+          setIsSubmitting(false);
+          return;
+        }
+  
+        console.log(
+          'MEAL PREP ITEMS CREATED:',
+          mealPrepItems
+        );
+  
+        /*
+         * Meal prep does NOT create an INVOICE here.
+         *
+         * INVOICE.BookingID references BOOKING, while this order
+         * is stored in MEAL_PREP_ORDER.
+         */
+        setShowBookingSuccess(true);
+        return;
+      }
+  
+      /*
+       * ============================================================
+       * CATERING BOOKING
+       * ============================================================
+       */
+  
+      if (!eventDate) {
+        alert(
+          'Please select an event date before submitting your booking.'
+        );
+        setIsSubmitting(false);
+        return;
+      }
+  
+      if (!eventTime) {
+        alert(
+          'Please select an event time before submitting your booking.'
+        );
+        setIsSubmitting(false);
+        return;
+      }
+  
+      if (!venue) {
+        alert(
+          'Please enter the event venue before submitting your booking.'
+        );
+        setIsSubmitting(false);
+        return;
+      }
+  
+      if (!Number.isFinite(guestCount) || guestCount <= 0) {
+        alert('Please enter a valid guest count.');
+        setIsSubmitting(false);
+        return;
+      }
+  
       /*
        * Create BOOKING
        */
@@ -385,18 +533,15 @@ export default function BrowsePage() {
         })
         .select('BookingID')
         .single();
-
+  
       if (bookingError || !booking) {
-        /*
-         * Print the actual Supabase error fields.
-         */
         console.error('BOOKING INSERT ERROR:', {
           message: bookingError?.message,
           details: bookingError?.details,
           hint: bookingError?.hint,
           code: bookingError?.code,
         });
-
+  
         console.error('BOOKING DATA SENT:', {
           CustomerID: customerId,
           OperatorID: operatorId,
@@ -406,24 +551,24 @@ export default function BrowsePage() {
           GuestCount: guestCount,
           Status: 'pending',
         });
-
+  
         alert(
           `Booking failed: ${
             bookingError?.message ??
             'Unable to retrieve the booking ID.'
           }`
         );
-
+  
         setIsSubmitting(false);
         return;
       }
-
+  
       console.log('BOOKING CREATED:', {
         bookingId: booking.BookingID,
       });
-
+  
       /*
-       * Create BOOKING_ITEM records.
+       * Create BOOKING_ITEM records
        */
       const bookingItems = validMenuItemIds.map(
         (menuItemId) => ({
@@ -432,13 +577,13 @@ export default function BrowsePage() {
           Quantity: 1,
         })
       );
-
+  
       const {
         error: bookingItemsError,
       } = await supabase
         .from('BOOKING_ITEM')
         .insert(bookingItems);
-
+  
       if (bookingItemsError) {
         console.error(
           'BOOKING_ITEM INSERT ERROR:',
@@ -449,46 +594,43 @@ export default function BrowsePage() {
             code: bookingItemsError.code,
           }
         );
-
-        // Remove booking if its items failed to save.
+  
         await supabase
           .from('BOOKING')
           .delete()
           .eq('BookingID', booking.BookingID);
-
+  
         alert(
           `Failed to save the selected menu items: ${bookingItemsError.message}`
         );
-
+  
         setIsSubmitting(false);
         return;
       }
-
+  
       console.log(
         'BOOKING ITEMS CREATED:',
         bookingItems
       );
-
+  
       /*
-       * Calculate invoice total.
-       *
-       * Existing CaterFlex pricing logic:
-       * menu item price × number of guests.
+       * Calculate invoice total
        */
       const totalAmount = validMenuItemIds.reduce(
         (sum, menuItemId) => {
           const menuItem = dbMenuItems.find(
             (item) => item.id === menuItemId
           );
-
+  
           return (
             sum +
-            Number(menuItem?.price ?? 0) * guestCount
+            Number(menuItem?.price ?? 0) *
+              guestCount
           );
         },
         0
       );
-
+  
       console.log(
         'CALCULATED INVOICE TOTAL:',
         {
@@ -497,28 +639,9 @@ export default function BrowsePage() {
           totalAmount,
         }
       );
-
+  
       /*
-       * Check current Supabase Auth session.
-       *
-       * Customer login currently uses the CUSTOMER table,
-       * not Supabase Auth, so this may be null.
-       */
-      const {
-        data: sessionData,
-      } = await supabase.auth.getSession();
-
-      console.log(
-        'SUPABASE SESSION BEFORE INVOICE:',
-        {
-          hasSession: !!sessionData.session,
-          userId: sessionData.session?.user?.id,
-          email: sessionData.session?.user?.email,
-        }
-      );
-
-      /*
-       * Create INVOICE.
+       * Create INVOICE
        */
       const {
         data: invoice,
@@ -534,7 +657,7 @@ export default function BrowsePage() {
           'InvoiceID, BookingID, TotalAmount, DateGenerated'
         )
         .single();
-
+  
       if (invoiceError || !invoice) {
         console.error('INVOICE INSERT ERROR:', {
           message: invoiceError?.message,
@@ -542,40 +665,38 @@ export default function BrowsePage() {
           hint: invoiceError?.hint,
           code: invoiceError?.code,
         });
-
-        console.error('INVOICE DATA SENT:', {
-          BookingID: booking.BookingID,
-          TotalAmount: totalAmount,
-          DateGenerated: new Date().toISOString(),
-        });
-
-        // Remove booking items first.
+  
         await supabase
           .from('BOOKING_ITEM')
           .delete()
-          .eq('BookingID', booking.BookingID);
-
-        // Then remove booking.
+          .eq(
+            'BookingID',
+            booking.BookingID
+          );
+  
         await supabase
           .from('BOOKING')
           .delete()
-          .eq('BookingID', booking.BookingID);
-
+          .eq(
+            'BookingID',
+            booking.BookingID
+          );
+  
         alert(
           `Failed to generate the invoice: ${
             invoiceError?.message ??
             'Unable to create the invoice.'
           }`
         );
-
+  
         setIsSubmitting(false);
         return;
       }
-
+  
       console.log('INVOICE CREATED:', invoice);
-
+  
       /*
-       * Booking successfully created.
+       * Catering booking successfully created.
        */
       setShowBookingSuccess(true);
     } catch (err) {
@@ -583,7 +704,7 @@ export default function BrowsePage() {
         'UNEXPECTED BOOKING ERROR:',
         err
       );
-
+  
       alert(
         'An unexpected error occurred while submitting your booking.'
       );

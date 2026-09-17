@@ -6,9 +6,9 @@ export function printInvoicePdf(invoice: Invoice): void {
       (li) =>
         `<tr>
           <td style="padding:8px;border-bottom:1px solid #ddd">${li.name}</td>
-          <td style="padding:8px;border-bottom:1px solid #ddd;text-align:right">$${li.unitPrice}</td>
+          <td style="padding:8px;border-bottom:1px solid #ddd;text-align:right">₱${li.unitPrice.toFixed(2)}</td>
           <td style="padding:8px;border-bottom:1px solid #ddd;text-align:center">${li.quantity}</td>
-          <td style="padding:8px;border-bottom:1px solid #ddd;text-align:right">$${li.total}</td>
+          <td style="padding:8px;border-bottom:1px solid #ddd;text-align:right">₱${li.total.toFixed(2)}</td>
         </tr>`
     )
     .join('');
@@ -18,22 +18,59 @@ export function printInvoicePdf(invoice: Invoice): void {
 <head>
   <title>Invoice ${invoice.id}</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 40px; color: #222; }
-    h1 { margin-bottom: 4px; }
-    .meta { color: #555; margin-bottom: 24px; }
-    table { width: 100%; border-collapse: collapse; margin: 24px 0; }
-    th { text-align: left; padding: 8px; border-bottom: 2px solid #333; }
-    .totals { margin-top: 16px; text-align: right; }
-    .totals p { margin: 4px 0; }
-    .balance { font-size: 1.2em; font-weight: bold; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 40px;
+      color: #222;
+    }
+
+    h1 {
+      margin-bottom: 4px;
+    }
+
+    .meta {
+      color: #555;
+      margin-bottom: 24px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0;
+    }
+
+    th {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 2px solid #333;
+    }
+
+    .totals {
+      margin-top: 16px;
+      text-align: right;
+    }
+
+    .totals p {
+      margin: 4px 0;
+    }
+
+    .balance {
+      font-size: 1.2em;
+      font-weight: bold;
+    }
   </style>
 </head>
+
 <body>
   <h1>CaterFlex Invoice</h1>
-  <p class="meta">Invoice ID: ${invoice.id}<br>
-  Generated: ${new Date(invoice.generatedAt).toLocaleString()}<br>
-  Customer: ${invoice.customerName} (${invoice.customerEmail})<br>
-  Event: ${invoice.eventType} — ${new Date(invoice.eventDate).toLocaleDateString()}</p>
+
+  <p class="meta">
+    Invoice ID: ${invoice.id}<br>
+    Generated: ${new Date(invoice.generatedAt).toLocaleString()}<br>
+    Customer: ${invoice.customerName} (${invoice.customerEmail})<br>
+    Event: ${invoice.eventType} — ${new Date(invoice.eventDate).toLocaleDateString()}
+  </p>
+
   <table>
     <thead>
       <tr>
@@ -43,18 +80,22 @@ export function printInvoicePdf(invoice: Invoice): void {
         <th style="text-align:right">Total</th>
       </tr>
     </thead>
+
     <tbody>${rows}</tbody>
   </table>
+
   <div class="totals">
-    <p>Subtotal: $${invoice.subtotal}</p>
-    <p>Payments received: $${invoice.paymentsMade}</p>
-    <p class="balance">Balance due: $${invoice.balanceDue}</p>
+    <p>Subtotal: ₱${invoice.subtotal.toFixed(2)}</p>
+    <p>Payments received: ₱${invoice.paymentsMade.toFixed(2)}</p>
+    <p class="balance">Balance due: ₱${invoice.balanceDue.toFixed(2)}</p>
   </div>
 </body>
 </html>`;
 
   const win = window.open('', '_blank');
+
   if (!win) return;
+
   win.document.write(html);
   win.document.close();
   win.focus();
