@@ -33,6 +33,15 @@ type Booking = {
   Status: string | null;
 };
 
+type MealPrepOrder = {
+  MealPrepOrderID: number;
+  CustomerID: number | null;
+  OperatorID: number | null;
+  RecurrencePattern: string | null;
+  MealsPerCycle: number | null;
+  Status: string | null;
+};
+
 type Customer = {
   CustomerID: number;
   Name: string;
@@ -127,22 +136,32 @@ export default function BookingsPage() {
         return;
       }
 
-      if (!bookingData || bookingData.length === 0) {
+      const { data: mealPrepData, error: mealPrepError } = await supabase
+        .from('MEAL_PREP_ORDER')
+        .select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status')
+        .order('MealPrepOrderID', { ascending: false });
+
+      if (mealPrepError) {
+        console.error('[v0] MEAL_PREP_ORDER FETCH ERROR:', mealPrepError);
+      }
+
+      const mealPrepOrders = (mealPrepData ?? []) as MealPrepOrder[];
+
+      if ((!bookingData || bookingData.length === 0) && mealPrepOrders.length === 0) {
         setBookings([]);
         return;
       }
 
-      const bookingIds = bookingData.map(
+      const bookingIds = (bookingData ?? []).map(
         (booking) => booking.BookingID
       );
 
       const customerIds = Array.from(
         new Set(
-          bookingData
-            .map((booking) => booking.CustomerID)
-            .filter(
-              (id): id is number => id !== null
-            )
+          [
+            ...(bookingData ?? []).map((booking) => booking.CustomerID),
+            ...mealPrepOrders.map((order) => order.CustomerID),
+          ].filter((id): id is number => id !== null)
         )
       );
 
@@ -236,7 +255,7 @@ export default function BookingsPage() {
       // ============================================================
 
       const combinedBookings: BookingDisplay[] =
-        bookingData.map((booking) => {
+        (bookingData ?? []).map((booking) => {
           const customer =
             customers.find(
               (item) =>
@@ -274,12 +293,27 @@ export default function BookingsPage() {
 
           return {
             ...booking,
+            OrderType: 'catering' as const,
             customer,
             items,
           };
         });
 
-      setBookings(combinedBookings);
+      const mealPrepBookings: BookingDisplay[] = mealPrepOrders.map((order) => ({
+        BookingID: -order.MealPrepOrderID,
+        CustomerID: order.CustomerID,
+        OperatorID: order.OperatorID,
+        EventDate: '',
+        EventTime: order.RecurrencePattern ?? 'Recurring',
+        OrderType: 'meal_prep',
+        Venue: 'Meal prep subscription',
+        GuestCount: order.MealsPerCycle ?? 0,
+        Status: order.Status,
+        customer: customers.find((customer) => customer.CustomerID === order.CustomerID) ?? null,
+        items: [],
+      }));
+
+      setBookings([...combinedBookings, ...mealPrepBookings]);
     } catch (error) {
       console.error(
         'Unexpected booking fetch error:',
@@ -333,14 +367,18 @@ export default function BookingsPage() {
         session.user.email
       );
   
-      // Update booking
-      const { error } = await supabase
-        .from('BOOKING')
-        .update({
-          Status: status,
-        })
-        .eq('BookingID', bookingId)
-        .eq('OperatorID', 2);
+      const isMealPrep = bookingId < 0;
+      const { error } = isMealPrep
+        ? await supabase
+            .from('MEAL_PREP_ORDER')
+            .update({ Status: status })
+            .eq('MealPrepOrderID', Math.abs(bookingId))
+            .eq('OperatorID', 2)
+        : await supabase
+            .from('BOOKING')
+            .update({ Status: status })
+            .eq('BookingID', bookingId)
+            .eq('OperatorID', 2);
   
       if (error) {
         console.error(
@@ -562,7 +600,7 @@ export default function BookingsPage() {
                         </p>
 
                         <p className="text-sm text-muted-foreground">
-                          {booking.OrderType === 'meal_prep' ? 'Meal prep order' : 'Catering event'} #{booking.BookingID}
+                          {booking.OrderType === 'meal_prep' ? 'Meal prep order' : 'Catering event'} #{Math.abs(booking.BookingID)}
                           {' • '}
                           {booking.GuestCount}
                           {booking.OrderType === 'meal_prep' ? ' servings • ' : ' guests • '}
@@ -573,9 +611,9 @@ export default function BookingsPage() {
                       <div className="ml-auto text-right">
 
                         <p className="text-sm text-muted-foreground">
-                          {new Date(
-                            `${booking.EventDate}T00:00:00`
-                          ).toLocaleDateString()}
+                          {booking.EventDate
+                            ? new Date(`${booking.EventDate}T00:00:00`).toLocaleDateString()
+                            : 'Recurring order'}
                         </p>
 
                         <div className="mt-1">
