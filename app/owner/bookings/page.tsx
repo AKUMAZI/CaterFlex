@@ -101,6 +101,7 @@ export default function BookingsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [activeSection, setActiveSection] = useState<BookingSection>('all');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // ============================================================
   // LOAD BOOKINGS
@@ -108,6 +109,7 @@ export default function BookingsPage() {
 
   const loadBookings = async () => {
     setLoading(true);
+    setLoadError(null);
 
     try {
       // Get bookings for this business/operator
@@ -116,11 +118,11 @@ export default function BookingsPage() {
         .select(
           'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status'
         )
-        .eq('OperatorID', 2)
         .order('BookingID', { ascending: false });
 
       if (bookingError) {
-        console.error('BOOKING FETCH ERROR:', bookingError);
+        console.error('[v0] BOOKING FETCH ERROR:', bookingError);
+        setLoadError(bookingError.message);
         setBookings([]);
         return;
       }
@@ -458,6 +460,12 @@ export default function BookingsPage() {
             <p className="text-muted-foreground">
               Loading bookings...
             </p>
+          </Card>
+
+        ) : loadError ? (
+          <Card className="p-12 text-center">
+            <p className="font-medium text-destructive">Unable to load bookings</p>
+            <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
           </Card>
 
         ) : bookings.length === 0 ? (
