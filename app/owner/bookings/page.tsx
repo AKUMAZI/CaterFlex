@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+type BookingSection = 'all' | 'catering' | 'meal_prep';
+
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { supabase } from '@/lib/supabase';
 
@@ -98,6 +100,7 @@ export default function BookingsPage() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [activeSection, setActiveSection] = useState<BookingSection>('all');
 
   // ============================================================
   // LOAD BOOKINGS
@@ -111,7 +114,7 @@ export default function BookingsPage() {
       const { data: bookingData, error: bookingError } = await supabase
         .from('BOOKING')
         .select(
-          'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, OrderType'
+          'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status'
         )
         .eq('OperatorID', 2)
         .order('BookingID', { ascending: false });
@@ -387,20 +390,24 @@ export default function BookingsPage() {
 
   const bookingSections = [
     {
-      key: 'catering',
+      key: 'catering' as const,
       label: 'Catering Events',
       description: 'Full-service catering requests and event bookings',
       icon: Utensils,
       bookings: bookings.filter((booking) => booking.OrderType !== 'meal_prep'),
     },
     {
-      key: 'meal_prep',
+      key: 'meal_prep' as const,
       label: 'Meal Prep Orders',
       description: 'Recurring meal prep orders and fulfillment requests',
       icon: PackageCheck,
       bookings: bookings.filter((booking) => booking.OrderType === 'meal_prep'),
     },
   ];
+
+  const visibleSections = activeSection === 'all'
+    ? bookingSections
+    : bookingSections.filter((section) => section.key === activeSection);
 
   // ============================================================
   // PAGE
@@ -420,6 +427,28 @@ export default function BookingsPage() {
           <p className="text-surface-muted-foreground mt-2">
             Manage and track all customer bookings
           </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3" role="tablist" aria-label="Booking type">
+          {[
+            { key: 'all' as const, label: 'All bookings', count: bookings.length },
+            { key: 'catering' as const, label: 'Catering events', count: bookingSections[0].bookings.length },
+            { key: 'meal_prep' as const, label: 'Meal prep orders', count: bookingSections[1].bookings.length },
+          ].map((tab) => (
+            <Button
+              key={tab.key}
+              type="button"
+              variant={activeSection === tab.key ? 'default' : 'outline'}
+              onClick={() => setActiveSection(tab.key)}
+              role="tab"
+              aria-selected={activeSection === tab.key}
+              className="gap-2"
+            >
+              {tab.key === 'meal_prep' ? <PackageCheck className="h-4 w-4" /> : <Utensils className="h-4 w-4" />}
+              {tab.label}
+              <span className="rounded-full bg-background/30 px-2 py-0.5 text-xs">{tab.count}</span>
+            </Button>
+          ))}
         </div>
 
         {/* LOADING */}
@@ -446,7 +475,7 @@ export default function BookingsPage() {
           /* BOOKINGS */
 
           <div className="space-y-8">
-            {bookingSections.map((section) => {
+            {visibleSections.map((section) => {
               const SectionIcon = section.icon;
 
               return (
