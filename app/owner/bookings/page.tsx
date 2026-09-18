@@ -15,6 +15,8 @@ import {
   Clock3,
   CheckCircle2,
   XCircle,
+  Utensils,
+  PackageCheck,
 } from 'lucide-react';
 
 type Booking = {
@@ -23,6 +25,7 @@ type Booking = {
   OperatorID: number | null;
   EventDate: string;
   EventTime: string;
+  OrderType: 'catering' | 'meal_prep' | null;
   Venue: string | null;
   GuestCount: number;
   Status: string | null;
@@ -108,7 +111,7 @@ export default function BookingsPage() {
       const { data: bookingData, error: bookingError } = await supabase
         .from('BOOKING')
         .select(
-          'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status'
+          'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, OrderType'
         )
         .eq('OperatorID', 2)
         .order('BookingID', { ascending: false });
@@ -382,6 +385,23 @@ export default function BookingsPage() {
     }
   };
 
+  const bookingSections = [
+    {
+      key: 'catering',
+      label: 'Catering Events',
+      description: 'Full-service catering requests and event bookings',
+      icon: Utensils,
+      bookings: bookings.filter((booking) => booking.OrderType !== 'meal_prep'),
+    },
+    {
+      key: 'meal_prep',
+      label: 'Meal Prep Orders',
+      description: 'Recurring meal prep orders and fulfillment requests',
+      icon: PackageCheck,
+      bookings: bookings.filter((booking) => booking.OrderType === 'meal_prep'),
+    },
+  ];
+
   // ============================================================
   // PAGE
   // ============================================================
@@ -425,9 +445,34 @@ export default function BookingsPage() {
 
           /* BOOKINGS */
 
-          <div className="space-y-4">
+          <div className="space-y-8">
+            {bookingSections.map((section) => {
+              const SectionIcon = section.icon;
 
-            {bookings.map((booking) => {
+              return (
+                <section key={section.key} aria-labelledby={`${section.key}-heading`}>
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <SectionIcon className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h2 id={`${section.key}-heading`} className="font-heading text-xl font-semibold text-surface-foreground">
+                        {section.label}
+                      </h2>
+                      <p className="text-sm text-muted-foreground">{section.description}</p>
+                    </div>
+                    <span className="ml-auto rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground">
+                      {section.bookings.length}
+                    </span>
+                  </div>
+
+                  {section.bookings.length === 0 ? (
+                    <Card className="p-6 text-center">
+                      <p className="text-sm text-muted-foreground">No {section.key === 'meal_prep' ? 'meal prep orders' : 'catering events'} yet.</p>
+                    </Card>
+                  ) : (
+                    <div className="space-y-4">
+                      {section.bookings.map((booking) => {
               const statusKey =
                 booking.Status?.toLowerCase() ??
                 'pending';
@@ -480,11 +525,10 @@ export default function BookingsPage() {
                         </p>
 
                         <p className="text-sm text-muted-foreground">
-                          Catering order #
-                          {booking.BookingID}
+                          {booking.OrderType === 'meal_prep' ? 'Meal prep order' : 'Catering event'} #{booking.BookingID}
                           {' • '}
                           {booking.GuestCount}
-                          {' guests • '}
+                          {booking.OrderType === 'meal_prep' ? ' servings • ' : ' guests • '}
                           {booking.EventTime}
                         </p>
                       </div>
@@ -731,8 +775,12 @@ export default function BookingsPage() {
 
                 </Card>
               );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
             })}
-
           </div>
         )}
 
