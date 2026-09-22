@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAppState } from '@/lib/state';
 import {
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 
 export function Sidebar() {
+  const pathname = usePathname();
   const { currentRole } = useAppState();
 
   const ownerLinks = [
@@ -24,6 +26,7 @@ export function Sidebar() {
     { href: '/owner/calendar', label: 'Calendar', icon: Calendar },
     { href: '/owner/menu', label: 'Menu Management', icon: UtensilsCrossed },
     { href: '/owner/inventory', label: 'Inventory', icon: Package },
+    { href: '/owner/macroflex', label: 'MacroFlex', icon: Activity },
     { href: '/owner/prep-schedule', label: 'Prep Schedule', icon: Clock },
     { href: '/owner/payments', label: 'Payments', icon: DollarSign },
     { href: '/owner/settings', label: 'Operating Rules', icon: Settings },
@@ -35,7 +38,7 @@ export function Sidebar() {
     { href: '/customer/status', label: 'My Bookings', icon: Activity },
   ];
 
-  const links = currentRole === 'owner' ? ownerLinks : customerLinks;
+  const links = pathname.startsWith('/owner/') || currentRole === 'owner' ? ownerLinks : customerLinks;
 
   return (
     <aside

@@ -1,14 +1,16 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAppState } from '@/lib/state';
 import { signOutAccount } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { LogOut, User } from 'lucide-react';
 
 export function TopNav() {
+  const pathname = usePathname();
   const router = useRouter();
   const { currentRole, currentUser } = useAppState();
+  const displayRole = pathname.startsWith('/owner/') ? 'owner' : currentRole;
 
   const handleSignOut = async () => {
     await signOutAccount();
@@ -22,7 +24,7 @@ export function TopNav() {
           <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-1">
             <User className="w-4 h-4 text-surface-muted-foreground" />
             <span className="text-sm font-medium capitalize text-surface-foreground">
-              {currentUser?.name || currentRole}
+              {currentUser?.name || displayRole}
             </span>
           </div>
 
