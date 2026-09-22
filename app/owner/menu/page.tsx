@@ -724,6 +724,33 @@ export default function MenuPage() {
                               </span>
                             </div>
 
+                            {/* REQUIRED INGREDIENTS */}
+                            <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                Ingredients per serving
+                              </p>
+
+                              {item.requiredIngredients.length > 0 ? (
+                                <ul className="mt-2 flex flex-col gap-1">
+                                  {item.requiredIngredients.map((ingredient) => (
+                                    <li
+                                      key={ingredient.id}
+                                      className="flex items-center justify-between gap-3 text-sm text-card-foreground"
+                                    >
+                                      <span className="truncate">{ingredient.name}</span>
+                                      <span className="whitespace-nowrap text-muted-foreground">
+                                        {ingredient.qty} {ingredient.unit}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="mt-2 text-sm text-muted-foreground">
+                                  No ingredients assigned yet.
+                                </p>
+                              )}
+                            </div>
+
                             {/* ALLERGENS */}
                             {item.allergyTags
                               .length >
