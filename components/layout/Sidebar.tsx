@@ -22,7 +22,7 @@ export function Sidebar() {
     { href: '/owner/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/owner/bookings', label: 'Bookings', icon: ClipboardList },
     { href: '/owner/calendar', label: 'Calendar', icon: Calendar },
-    { href: '/owner/menu', label: 'Menu Management', icon: UtensilsCrossed },
+    { href: '/menu-management', label: 'Menu Management', icon: UtensilsCrossed },
     { href: '/owner/inventory', label: 'Inventory', icon: Package },
     { href: '/owner/prep-schedule', label: 'Prep Schedule', icon: Clock },
     { href: '/owner/payments', label: 'Payments', icon: DollarSign },
