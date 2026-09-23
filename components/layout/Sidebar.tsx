@@ -19,7 +19,7 @@ import {
 export function Sidebar() {
   const pathname = usePathname();
   const { currentRole } = useAppState();
-  const isOwnerRoute = pathname === '/owner' || pathname.startsWith('/owner/');
+  const isOwnerRoute = pathname === '/owner' || pathname.startsWith('/owner/') || pathname === '/menu-management' || pathname.startsWith('/menu-management/');
   const isCustomerRoute = pathname === '/customer' || pathname.startsWith('/customer/');
 
   const ownerLinks = [
