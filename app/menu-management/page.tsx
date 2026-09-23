@@ -87,9 +87,29 @@ export default function MenuManagementPage() {
         if (failure) {
           throw failure
         }
-        setMenuItems((menuResult.data ?? []) as MenuItem[])
-        setIngredients((ingredientResult.data ?? []) as Ingredient[])
-        setDishIngredients((dishResult.data ?? []) as DishIngredient[])
+        // PostgREST can return numeric columns as strings depending on the
+        // database schema and client settings. Normalize IDs before joining
+        // the three live tables so the ingredient relation is not dropped by
+        // strict equality checks.
+        setMenuItems((menuResult.data ?? []).map((item) => ({
+          ...(item as MenuItem),
+          MenuItemID: Number(item.MenuItemID),
+          Price: Number(item.Price),
+          PrepTimeDays: Number(item.PrepTimeDays),
+        })))
+        setIngredients((ingredientResult.data ?? []).map((ingredient) => ({
+          ...(ingredient as Ingredient),
+          IngredientID: Number(ingredient.IngredientID),
+          CurrentStock: ingredient.CurrentStock == null ? null : Number(ingredient.CurrentStock),
+          MaxStorageCapacity: Number(ingredient.MaxStorageCapacity),
+        })))
+        setDishIngredients((dishResult.data ?? []).map((relation) => ({
+          ...(relation as DishIngredient),
+          DishIngredientID: Number(relation.DishIngredientID),
+          MenuItemID: Number(relation.MenuItemID),
+          IngredientID: Number(relation.IngredientID),
+          QuantityRequiredPerServing: Number(relation.QuantityRequiredPerServing),
+        })))
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load menu data from Supabase.')
       } finally {
