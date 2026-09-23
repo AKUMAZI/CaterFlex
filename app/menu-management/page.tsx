@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
-import { mockIngredients, mockMenuItems } from '@/lib/mockData'
 
 type MenuItem = {
   MenuItemID: number
@@ -72,38 +71,8 @@ export default function MenuManagementPage() {
       setLoading(true)
       setErrorMessage('')
 
-      const useMockData = () => {
-        const menuData = mockMenuItems.map((item, index) => ({
-          MenuItemID: index + 1,
-          ItemName: item.name,
-          Category: item.category,
-          Price: item.price,
-          PrepTimeDays: item.prepTimeDays,
-          Description: item.description,
-        }))
-        const ingredientData = mockIngredients.map((ingredient, index) => ({
-          IngredientID: index + 1,
-          IngredientName: ingredient.name,
-          UnitOfMeasure: ingredient.unit,
-          CurrentStock: ingredient.currentStock,
-          MaxStorageCapacity: ingredient.maxCapacity,
-        }))
-        const ingredientIds = new Map(mockIngredients.map((ingredient, index) => [ingredient.id, index + 1]))
-        const dishData = mockMenuItems.flatMap((item, menuIndex) =>
-          item.requiredIngredients.map((required, ingredientIndex) => ({
-            DishIngredientID: menuIndex * 100 + ingredientIndex + 1,
-            MenuItemID: menuIndex + 1,
-            IngredientID: ingredientIds.get(required.id) ?? 0,
-            QuantityRequiredPerServing: required.qty,
-          })),
-        )
-        setMenuItems(menuData)
-        setIngredients(ingredientData)
-        setDishIngredients(dishData.filter((relation) => relation.IngredientID !== 0))
-      }
-
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
-        useMockData()
+        setErrorMessage('Supabase is not configured for this environment. Add the project connection in Vercel to load live menu and ingredient data.')
         setLoading(false)
         return
       }
@@ -116,16 +85,16 @@ export default function MenuManagementPage() {
         ])
         const failure = menuResult.error || ingredientResult.error || dishResult.error
         if (failure) {
-          useMockData()
-        } else {
-          setMenuItems((menuResult.data ?? []) as MenuItem[])
-          setIngredients((ingredientResult.data ?? []) as Ingredient[])
-          setDishIngredients((dishResult.data ?? []) as DishIngredient[])
+          throw failure
         }
-      } catch {
-        useMockData()
+        setMenuItems((menuResult.data ?? []) as MenuItem[])
+        setIngredients((ingredientResult.data ?? []) as Ingredient[])
+        setDishIngredients((dishResult.data ?? []) as DishIngredient[])
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load menu data from Supabase.')
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     }
     void loadMenu()
   }, [])
