@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAppState } from '@/lib/state';
 import {
   LayoutDashboard,
@@ -16,7 +17,10 @@ import {
 } from 'lucide-react';
 
 export function Sidebar() {
+  const pathname = usePathname();
   const { currentRole } = useAppState();
+  const isOwnerRoute = pathname === '/owner' || pathname.startsWith('/owner/');
+  const isCustomerRoute = pathname === '/customer' || pathname.startsWith('/customer/');
 
   const ownerLinks = [
     { href: '/owner/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -35,7 +39,7 @@ export function Sidebar() {
     { href: '/customer/status', label: 'My Bookings', icon: Activity },
   ];
 
-  const links = currentRole === 'owner' ? ownerLinks : customerLinks;
+  const links = isOwnerRoute || (!isCustomerRoute && currentRole === 'owner') ? ownerLinks : customerLinks;
 
   return (
     <aside
