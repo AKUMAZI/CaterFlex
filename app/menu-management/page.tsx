@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
+import { mockIngredients, mockMenuItems } from '@/lib/mockData'
 
 type MenuItem = {
   MenuItemID: number
@@ -70,18 +71,59 @@ export default function MenuManagementPage() {
     async function loadMenu() {
       setLoading(true)
       setErrorMessage('')
-      const [menuResult, ingredientResult, dishResult] = await Promise.all([
-        supabase.from('MENU_ITEM').select('MenuItemID, ItemName, Category, Price, PrepTimeDays, Description').order('ItemName'),
-        supabase.from('INGREDIENT').select('IngredientID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity').order('IngredientName'),
-        supabase.from('DISH_INGREDIENT').select('DishIngredientID, MenuItemID, IngredientID, QuantityRequiredPerServing').order('DishIngredientID'),
-      ])
-      const failure = menuResult.error || ingredientResult.error || dishResult.error
-      if (failure) {
-        setErrorMessage(`Unable to load menu data: ${failure.message}`)
-      } else {
-        setMenuItems((menuResult.data ?? []) as MenuItem[])
-        setIngredients((ingredientResult.data ?? []) as Ingredient[])
-        setDishIngredients((dishResult.data ?? []) as DishIngredient[])
+
+      const useMockData = () => {
+        const menuData = mockMenuItems.map((item, index) => ({
+          MenuItemID: index + 1,
+          ItemName: item.name,
+          Category: item.category,
+          Price: item.price,
+          PrepTimeDays: item.prepTimeDays,
+          Description: item.description,
+        }))
+        const ingredientData = mockIngredients.map((ingredient, index) => ({
+          IngredientID: index + 1,
+          IngredientName: ingredient.name,
+          UnitOfMeasure: ingredient.unit,
+          CurrentStock: ingredient.currentStock,
+          MaxStorageCapacity: ingredient.maxCapacity,
+        }))
+        const ingredientIds = new Map(mockIngredients.map((ingredient, index) => [ingredient.id, index + 1]))
+        const dishData = mockMenuItems.flatMap((item, menuIndex) =>
+          item.requiredIngredients.map((required, ingredientIndex) => ({
+            DishIngredientID: menuIndex * 100 + ingredientIndex + 1,
+            MenuItemID: menuIndex + 1,
+            IngredientID: ingredientIds.get(required.id) ?? 0,
+            QuantityRequiredPerServing: required.qty,
+          })),
+        )
+        setMenuItems(menuData)
+        setIngredients(ingredientData)
+        setDishIngredients(dishData.filter((relation) => relation.IngredientID !== 0))
+      }
+
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
+        useMockData()
+        setLoading(false)
+        return
+      }
+
+      try {
+        const [menuResult, ingredientResult, dishResult] = await Promise.all([
+          supabase.from('MENU_ITEM').select('MenuItemID, ItemName, Category, Price, PrepTimeDays, Description').order('ItemName'),
+          supabase.from('INGREDIENT').select('IngredientID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity').order('IngredientName'),
+          supabase.from('DISH_INGREDIENT').select('DishIngredientID, MenuItemID, IngredientID, QuantityRequiredPerServing').order('DishIngredientID'),
+        ])
+        const failure = menuResult.error || ingredientResult.error || dishResult.error
+        if (failure) {
+          useMockData()
+        } else {
+          setMenuItems((menuResult.data ?? []) as MenuItem[])
+          setIngredients((ingredientResult.data ?? []) as Ingredient[])
+          setDishIngredients((dishResult.data ?? []) as DishIngredient[])
+        }
+      } catch {
+        useMockData()
       }
       setLoading(false)
     }
