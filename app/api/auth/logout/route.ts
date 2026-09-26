@@ -1,31 +1,29 @@
 import { getSupabaseServer } from "@/lib/auth-server";
+import { decodeSession, SESSION_COOKIE } from "@/lib/session-cookie";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 export async function POST() {
   try {
+    const cookieStore = await cookies();
+    const tableSession = await decodeSession(cookieStore.get(SESSION_COOKIE)?.value);
     const supabase = await getSupabaseServer();
-
     const {
       data: { session },
     } = await supabase.auth.getSession();
 
-    if (!session) {
-      return NextResponse.json(
-        { error: "No active session" },
-        { status: 401 }
-      );
+    const userRole = session?.user?.user_metadata?.role ?? tableSession?.role;
+
+    if (session) {
+      await supabase.auth.signOut();
     }
 
-    const userRole = session.user?.user_metadata?.role;
+    cookieStore.delete(SESSION_COOKIE);
 
-    await supabase.auth.signOut();
-
-    const redirectUrl = userRole === "admin" ? "/admin/login" : "/login";
-
-    return NextResponse.json(
-      { message: "Signed out successfully", redirectUrl },
-      { status: 200 }
-    );
+    return NextResponse.json({
+      message: "Signed out successfully",
+      redirectUrl: userRole === "admin" ? "/admin/login" : "/login",
+    });
   } catch (error) {
     console.error("Logout error:", error);
     return NextResponse.json(

@@ -14,11 +14,8 @@ export function TopNav() {
     try {
       const response = await fetch('/api/auth/logout', { method: 'POST' });
       const data = await response.json();
-      if (response.ok && data.redirectUrl) {
-        router.push(data.redirectUrl);
-      } else {
-        router.push('/login');
-      }
+      await signOutAccount();
+      router.push(response.ok && data.redirectUrl ? data.redirectUrl : '/login');
     } catch {
       await signOutAccount();
       router.push('/login');
