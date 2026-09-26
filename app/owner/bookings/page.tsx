@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
+import { getCustomersByIds } from '@/app/actions/auth';
 import { supabase } from '@/lib/supabase';
 
 import { Card } from '@/components/ui/card';
@@ -145,23 +146,11 @@ export default function BookingsPage() {
       let customers: Customer[] = [];
 
       if (customerIds.length > 0) {
-        const {
-          data: customerData,
-          error: customerError,
-        } = await supabase
-          .from('CUSTOMER')
-          .select(
-            'CustomerID, Name, Email, Contact'
-          )
-          .in('CustomerID', customerIds);
-
-        if (customerError) {
-          console.error(
-            'CUSTOMER FETCH ERROR:',
-            customerError
-          );
+        const customerResult = await getCustomersByIds(customerIds);
+        if (!customerResult.ok) {
+          console.error('CUSTOMER FETCH ERROR:', customerResult.error);
         } else {
-          customers = customerData ?? [];
+          customers = customerResult.customers as Customer[];
         }
       }
 

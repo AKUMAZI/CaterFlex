@@ -40,7 +40,7 @@ export default function SignupPage() {
       setError(result.error);
       return;
     }
-    router.push('/customer/inquiry');
+    router.replace('/customer/inquiry');
   }
 
   return (

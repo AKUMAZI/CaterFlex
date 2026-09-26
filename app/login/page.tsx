@@ -35,7 +35,7 @@ function LoginForm() {
       setError(result.error);
       return;
     }
-    router.push(role === 'owner' ? '/owner/dashboard' : '/customer/inquiry');
+    router.replace(role === 'owner' ? '/owner/dashboard' : '/customer/inquiry');
   }
 
   return (

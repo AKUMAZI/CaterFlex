@@ -1,22 +1,28 @@
-import { type NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { type NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { decodeSession, SESSION_COOKIE } from '@/lib/session-cookie'
+
+function homeForRole(role: string) {
+  if (role === 'admin') return '/admin/dashboard'
+  if (role === 'owner') return '/owner/dashboard'
+  return '/customer/inquiry'
+}
 
 export async function middleware(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
+  const pathname = request.nextUrl.pathname
+  const tableSession = await decodeSession(request.cookies.get(SESSION_COOKIE)?.value)
 
-  // Public routes that don't require auth. Login pages are handled below so
-  // authenticated users can be redirected away from them.
-  const publicRoutes = ["/", "/login", "/signup"];
+  const publicRoutes = ['/', '/login', '/signup']
   if (publicRoutes.includes(pathname)) {
-    return NextResponse.next();
+    if ((pathname === '/login' || pathname === '/signup') && tableSession) {
+      return NextResponse.redirect(new URL(homeForRole(tableSession.role), request.url))
+    }
+    return NextResponse.next()
   }
 
-  // Create Supabase server client for session checking
   let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
+    request: { headers: request.headers },
+  })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,68 +30,66 @@ export async function middleware(request: NextRequest) {
     {
       cookies: {
         getAll() {
-          return request.cookies.getAll();
+          return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
-          });
+          cookiesToSet.forEach(({ name, value }) => {
+            response.cookies.set(name, value)
+          })
         },
       },
     }
-  );
+  )
 
   const {
     data: { session },
-  } = await supabase.auth.getSession();
+  } = await supabase.auth.getSession()
 
-  const userRole = session?.user?.user_metadata?.role || null;
-  const isAuthenticated = !!session;
+  const supabaseRole = session?.user?.user_metadata?.role || null
+  const isSupabaseAuthenticated = !!session
 
-  // Admin routes - require admin role
-  if (pathname.startsWith("/admin")) {
-    if (pathname === "/admin/login") {
-      // If already admin, redirect to dashboard
-      if (isAuthenticated && userRole === "admin") {
-        return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+  if (pathname.startsWith('/admin')) {
+    if (pathname === '/admin/login') {
+      if (isSupabaseAuthenticated && supabaseRole === 'admin') {
+        return NextResponse.redirect(new URL('/admin/dashboard', request.url))
       }
-      return NextResponse.next();
+      return NextResponse.next()
     }
-
-    // Admin dashboard and other admin routes
-    if (!isAuthenticated || userRole !== "admin") {
-      return NextResponse.redirect(new URL("/admin/login", request.url));
+    if (!isSupabaseAuthenticated || supabaseRole !== 'admin') {
+      return NextResponse.redirect(new URL('/admin/login', request.url))
     }
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
-  // Owner routes - require owner role
-  if (pathname.startsWith("/owner")) {
-    if (isAuthenticated && userRole === "admin") {
-      return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+  if (pathname.startsWith('/owner')) {
+    if (tableSession?.role === 'owner') {
+      return NextResponse.next()
     }
-    if (!isAuthenticated || userRole !== "owner") {
-      return NextResponse.redirect(new URL("/login", request.url));
+    if (isSupabaseAuthenticated && supabaseRole === 'admin') {
+      return NextResponse.redirect(new URL('/admin/dashboard', request.url))
     }
-    return NextResponse.next();
+    if (isSupabaseAuthenticated && supabaseRole === 'owner') {
+      return NextResponse.next()
+    }
+    return NextResponse.redirect(new URL('/login?role=owner', request.url))
   }
 
-  // Customer routes - require customer role
-  if (pathname.startsWith("/customer")) {
-    if (isAuthenticated && userRole === "admin") {
-      return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+  if (pathname.startsWith('/customer')) {
+    if (tableSession?.role === 'customer') {
+      return NextResponse.next()
     }
-    if (!isAuthenticated || userRole !== "customer") {
-      return NextResponse.redirect(new URL("/login", request.url));
+    if (isSupabaseAuthenticated && supabaseRole === 'admin') {
+      return NextResponse.redirect(new URL('/admin/dashboard', request.url))
     }
-    return NextResponse.next();
+    if (isSupabaseAuthenticated && supabaseRole === 'customer') {
+      return NextResponse.next()
+    }
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  return response;
+  return response
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)",
-  ],
-};
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico)$).*)'],
+}
