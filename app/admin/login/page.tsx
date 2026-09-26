@@ -54,7 +54,7 @@ function AdminLoginForm() {
         return;
       }
 
-      const userRole = data.user.user_metadata?.role;
+      const userRole = data.user.app_metadata?.role;
 
       if (userRole !== 'admin') {
         await supabase.auth.signOut();

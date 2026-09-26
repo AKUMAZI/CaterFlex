@@ -16,7 +16,7 @@ export async function POST() {
       );
     }
 
-    const userRole = session.user?.user_metadata?.role;
+    const userRole = session.user?.app_metadata?.role;
 
     await supabase.auth.signOut();
 

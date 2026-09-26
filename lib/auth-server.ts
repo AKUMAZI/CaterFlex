@@ -36,7 +36,7 @@ export async function getSessionWithRole() {
     return null;
   }
 
-  const userRole = session.user.user_metadata?.role || null;
+  const userRole = session.user.app_metadata?.role || null;
 
   return {
     session,

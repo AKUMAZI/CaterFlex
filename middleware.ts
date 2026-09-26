@@ -39,7 +39,7 @@ export async function middleware(request: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  const userRole = session?.user?.user_metadata?.role || null;
+  const userRole = session?.user?.app_metadata?.role || null;
   const isAuthenticated = !!session;
 
   // Admin routes - require admin role

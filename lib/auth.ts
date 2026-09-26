@@ -362,7 +362,7 @@ export async function signInAdmin(email: string, password: string): Promise<Auth
       };
     }
 
-    const userRole = authData.user.user_metadata?.role;
+    const userRole = authData.user.app_metadata?.role;
 
     if (userRole !== 'admin') {
       await supabase.auth.signOut();
