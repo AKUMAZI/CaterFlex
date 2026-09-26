@@ -1,5 +1,6 @@
 'use server'
 
+import bcrypt from 'bcryptjs'
 import { timingSafeEqual } from 'crypto'
 import { cookies } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase-admin'
@@ -74,13 +75,14 @@ export async function signUpCustomer(input: {
     return { ok: false, error: 'This email already has a customer profile. Sign in instead.' }
   }
 
+  const passwordHash = await bcrypt.hash(password, 12)
   const { data, error } = await admin
     .from('CUSTOMER')
     .insert({
       Name: name,
       Contact: contact,
       Email: email,
-      Password: password,
+      Password: passwordHash,
     })
     .select('CustomerID, Name, Email')
     .single()
@@ -114,7 +116,11 @@ export async function signInCustomer(input: {
   if (error) {
     return { ok: false, error: 'Could not load the customer profile.' }
   }
-  if (!data || !passwordsMatch(data.Password, input.password)) {
+  if (
+    !data ||
+    typeof data.Password !== 'string' ||
+    !(await bcrypt.compare(input.password, data.Password))
+  ) {
     return { ok: false, error: 'Invalid email or password.' }
   }
 
