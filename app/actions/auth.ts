@@ -19,6 +19,26 @@ function passwordsMatch(stored: string | null | undefined, provided: string) {
   return timingSafeEqual(a, b)
 }
 
+function isBcryptHash(value: string) {
+  return /^\$2[aby]?\$\d{2}\$/.test(value)
+}
+
+async function verifyPassword(stored: string | null | undefined, provided: string) {
+  if (!stored) return { valid: false, needsUpgrade: false }
+
+  if (isBcryptHash(stored)) {
+    return {
+      valid: await bcrypt.compare(provided, stored),
+      needsUpgrade: false,
+    }
+  }
+
+  return {
+    valid: passwordsMatch(stored, provided),
+    needsUpgrade: true,
+  }
+}
+
 async function setSessionCookie(user: User) {
   const store = await cookies()
   store.set(SESSION_COOKIE, await encodeSession(user), {
@@ -116,12 +136,17 @@ export async function signInCustomer(input: {
   if (error) {
     return { ok: false, error: 'Could not load the customer profile.' }
   }
-  if (
-    !data ||
-    typeof data.Password !== 'string' ||
-    !(await bcrypt.compare(input.password, data.Password))
-  ) {
+  const passwordCheck = await verifyPassword(data?.Password, input.password)
+  if (!data || !passwordCheck.valid) {
     return { ok: false, error: 'Invalid email or password.' }
+  }
+
+  if (passwordCheck.needsUpgrade) {
+    const passwordHash = await bcrypt.hash(input.password, 12)
+    await admin
+      .from('CUSTOMER')
+      .update({ Password: passwordHash })
+      .eq('CustomerID', data.CustomerID)
   }
 
   const user: User = {
@@ -149,8 +174,17 @@ export async function signInOwner(input: {
   if (error) {
     return { ok: false, error: 'Could not load the owner profile.' }
   }
-  if (!data || !passwordsMatch(data.Password, input.password)) {
+  const passwordCheck = await verifyPassword(data?.Password, input.password)
+  if (!data || !passwordCheck.valid) {
     return { ok: false, error: 'Invalid email or password.' }
+  }
+
+  if (passwordCheck.needsUpgrade) {
+    const passwordHash = await bcrypt.hash(input.password, 12)
+    await admin
+      .from('BUSINESS_OWNER')
+      .update({ Password: passwordHash })
+      .eq('OperatorID', data.OperatorID)
   }
 
   const user: User = {
