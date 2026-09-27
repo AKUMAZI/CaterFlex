@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Check, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { createBooking } from '@/app/actions/booking-actions';
 import {
   checkAllergenConflict,
   getUniqueConflictingAllergens,
@@ -288,9 +289,6 @@ export default function BrowsePage() {
         return;
       }
 
-      // CaterFlex currently uses one operator.
-      const operatorId = 2;
-
       // Make sure the selected menu items actually exist in Supabase.
       const validMenuItemIds = selectedMenuItemIds.filter(
         (menuItemId) =>
@@ -304,79 +302,17 @@ export default function BrowsePage() {
         return;
       }
 
-      /*
-       * Create BOOKING
-       */
-      const { data: booking, error: bookingError } =
-        await supabase
-          .from('BOOKING')
-          .insert({
-            CustomerID: customerId,
-            OperatorID: operatorId,
-            EventDate: String(
-              customerBookingDraft.eventDate ?? ''
-            ),
-            EventTime: String(
-              customerBookingDraft.eventTime ?? ''
-            ),
-            Venue: String(
-              customerBookingDraft.venue ?? ''
-            ),
-            GuestCount: guestCount,
-            Status: 'pending',
-          })
-          .select('BookingID')
-          .single();
-
-      if (bookingError || !booking) {
-        console.error(
-          'BOOKING INSERT ERROR:',
-          bookingError
-        );
-
-        alert(
-          `Booking failed: ${
-            bookingError?.message ??
-            'Unable to retrieve the booking ID.'
-          }`
-        );
-
-        setIsSubmitting(false);
-        return;
-      }
-
-      /*
-       * Create BOOKING_ITEM records
-       */
-      const bookingItems = validMenuItemIds.map(
-        (menuItemId) => ({
-          BookingID: booking.BookingID,
+      const result = await createBooking(
+        customerBookingDraft,
+        validMenuItemIds.map((menuItemId) => ({
           MenuItemID: Number(menuItemId),
           Quantity: 1,
-        })
+        }))
       );
 
-      const { error: bookingItemsError } =
-        await supabase
-          .from('BOOKING_ITEM')
-          .insert(bookingItems);
-
-      if (bookingItemsError) {
-        console.error(
-          'Booking item insert error:',
-          bookingItemsError
-        );
-
-        // Remove the booking if its items failed to save.
-        await supabase
-          .from('BOOKING')
-          .delete()
-          .eq('BookingID', booking.BookingID);
-
-        alert(
-          'Failed to save the selected menu items. Please try again.'
-        );
-
+      if (!result.ok) {
+        console.error('BOOKING INSERT ERROR:', result.error);
+        alert(`Booking failed: ${result.error}`);
         setIsSubmitting(false);
         return;
       }

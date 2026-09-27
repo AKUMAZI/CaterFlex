@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { getCustomersByIds } from '@/app/actions/auth';
 import { supabase } from '@/lib/supabase';
+import { getOwnerBookings, updateBookingStatus as updateBookingStatusAction } from '@/app/actions/booking-actions';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -105,22 +106,18 @@ export default function BookingsPage() {
     setLoading(true);
 
     try {
-      // Get bookings for this business/operator
-      const { data: bookingData, error: bookingError } = await supabase
-        .from('BOOKING')
-        .select(
-          'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status'
-        )
-        .eq('OperatorID', 2)
-        .order('BookingID', { ascending: false });
+      const bookingResult = await getOwnerBookings();
 
-      if (bookingError) {
-        console.error('BOOKING FETCH ERROR:', bookingError);
+      if (!bookingResult.ok) {
+        console.error('BOOKING FETCH ERROR:', bookingResult.error);
         setBookings([]);
         return;
       }
 
-      if (!bookingData || bookingData.length === 0) {
+      const bookingData = bookingResult.bookings;
+      const bookingItemData = bookingResult.bookingItems;
+
+      if (bookingData.length === 0) {
         setBookings([]);
         return;
       }
@@ -158,24 +155,7 @@ export default function BookingsPage() {
       // GET BOOKING ITEMS
       // ============================================================
 
-      const {
-        data: bookingItemData,
-        error: bookingItemError,
-      } = await supabase
-        .from('BOOKING_ITEM')
-        .select(
-          'BookingItemID, BookingID, MenuItemID, Quantity'
-        )
-        .in('BookingID', bookingIds);
-
-      if (bookingItemError) {
-        console.error(
-          'BOOKING_ITEM FETCH ERROR:',
-          bookingItemError
-        );
-      }
-
-      const bookingItems = bookingItemData ?? [];
+      const bookingItems = bookingItemData;
 
       // ============================================================
       // GET MENU ITEMS
@@ -293,58 +273,17 @@ export default function BookingsPage() {
     setUpdatingId(bookingId);
   
     try {
-      // Check Supabase Auth session
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-  
-      console.log('SUPABASE SESSION:', session);
-      console.log('SESSION ERROR:', sessionError);
-  
-      if (!session) {
-        alert(
-          'No Supabase Auth session found. The owner is not authenticated.'
-        );
-        return;
-      }
-  
-      console.log(
-        'Authenticated as:',
-        session.user.email
-      );
-  
-      // Update booking
-      const { error } = await supabase
-        .from('BOOKING')
-        .update({
-          Status: status,
-        })
-        .eq('BookingID', bookingId)
-        .eq('OperatorID', 2);
-  
-      if (error) {
-        console.error(
-          'BOOKING STATUS UPDATE ERROR:',
-          error
-        );
-  
+      const result = await updateBookingStatusAction(bookingId, status);
+
+      if (!result.ok) {
+        console.error('BOOKING STATUS UPDATE ERROR:', result.error);
         alert(
           `Failed to ${
-            status === 'confirmed'
-              ? 'confirm'
-              : 'reject'
-          } booking: ${error.message}`
+            status === 'confirmed' ? 'confirm' : 'reject'
+          } booking: ${result.error}`
         );
-  
         return;
       }
-  
-      console.log(
-        'BOOKING STATUS UPDATE SUCCESS:',
-        bookingId,
-        status
-      );
   
       // Update owner page immediately
       setBookings((current) =>

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { CustomerShell } from '@/app/customer/customer-shell';
 import { useAppState } from '@/lib/state';
 import { supabase } from '@/lib/supabase';
+import { getCustomerBookings } from '@/app/actions/booking-actions';
 
 import {
   Card,
@@ -107,23 +108,18 @@ export default function CustomerStatusPage() {
       }
 
       try {
-        // Get this customer's bookings
-        const { data: bookingData, error: bookingError } =
-          await supabase
-            .from('BOOKING')
-            .select(
-              'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status'
-            )
-            .eq('CustomerID', customerId)
-            .order('BookingID', { ascending: false });
+        const result = await getCustomerBookings();
 
-        if (bookingError) {
-          console.error('BOOKING FETCH ERROR:', bookingError);
+        if (!result.ok) {
+          console.error('BOOKING FETCH ERROR:', result.error);
           setBookings([]);
           return;
         }
 
-        if (!bookingData || bookingData.length === 0) {
+        const bookingData = result.bookings;
+        const bookingItemData = result.bookingItems;
+
+        if (bookingData.length === 0) {
           setBookings([]);
           return;
         }
@@ -131,24 +127,6 @@ export default function CustomerStatusPage() {
         const bookingIds = bookingData.map(
           (booking) => booking.BookingID
         );
-
-        // Get menu items selected for these bookings
-        const { data: bookingItemData, error: bookingItemError } =
-          await supabase
-            .from('BOOKING_ITEM')
-            .select(
-              'BookingItemID, BookingID, MenuItemID, Quantity'
-            )
-            .in('BookingID', bookingIds);
-
-        if (bookingItemError) {
-          console.error(
-            'BOOKING_ITEM FETCH ERROR:',
-            bookingItemError
-          );
-          setBookings([]);
-          return;
-        }
 
         const menuItemIds = Array.from(
           new Set(
