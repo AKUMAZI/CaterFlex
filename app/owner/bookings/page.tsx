@@ -28,6 +28,7 @@ type Booking = {
   Venue: string | null;
   GuestCount: number;
   Status: string | null;
+  AllergenConflictFlag: boolean | null;
 };
 
 type Customer = {
@@ -425,7 +426,7 @@ export default function BookingsPage() {
                           ).toLocaleDateString()}
                         </p>
 
-                        <div className="mt-1">
+                          <div className="mt-1 flex items-center justify-end gap-2 flex-wrap">
 
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${status.className}`}
@@ -433,6 +434,12 @@ export default function BookingsPage() {
                             <StatusIcon className="w-3 h-3" />
                             {status.label}
                           </span>
+
+                          {booking.AllergenConflictFlag === true && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
+                              Allergen warning
+                            </span>
+                          )}
 
                         </div>
                       </div>

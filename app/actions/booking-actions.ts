@@ -3,7 +3,7 @@
 import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
 
-const BOOKING_FIELDS = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status'
+const BOOKING_FIELDS = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, AllergenConflictFlag'
 const BOOKING_ITEM_FIELDS = 'BookingItemID, BookingID, MenuItemID, Quantity'
 
 type BookingDetails = {
