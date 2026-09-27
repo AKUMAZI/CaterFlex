@@ -41,14 +41,43 @@ export async function createBooking(bookingDetails: BookingDetails, items: Booki
   if (!customer) return { ok: false as const, error: 'Customer access required.' }
 
   const admin = createAdminClient()
+  const customerId = Number(customer.id)
+  const selectedMenuItemIds = items.map((item) => Number(item.MenuItemID)).filter(Number.isFinite)
+
+  const { data: customerAllergies, error: customerAllergyError } = await admin
+    .from('CUSTOMER_ALLERGY')
+    .select('AllergyTagID')
+    .eq('CustomerID', customerId)
+  if (customerAllergyError) return { ok: false as const, error: customerAllergyError.message }
+
+  const { data: menuItemAllergies, error: menuItemAllergyError } = selectedMenuItemIds.length > 0
+    ? await admin.from('MENU_ITEM_ALLERGY').select('AllergyTagID').in('MenuItemID', selectedMenuItemIds)
+    : { data: [], error: null }
+  if (menuItemAllergyError) return { ok: false as const, error: menuItemAllergyError.message }
+
+  const allergyTagIds = Array.from(new Set([
+    ...(customerAllergies ?? []).map((allergy) => Number(allergy.AllergyTagID)),
+    ...(menuItemAllergies ?? []).map((allergy) => Number(allergy.AllergyTagID)),
+  ].filter(Number.isFinite)))
+
+  const { data: allergyTags, error: allergyTagError } = allergyTagIds.length > 0
+    ? await admin.from('ALLERGY_TAG').select('AllergyTagID, AllergenName').in('AllergyTagID', allergyTagIds)
+    : { data: [], error: null }
+  if (allergyTagError) return { ok: false as const, error: allergyTagError.message }
+
+  const allergenNamesById = new Map((allergyTags ?? []).map((tag) => [Number(tag.AllergyTagID), String(tag.AllergenName).trim().toLowerCase()]))
+  const customerAllergenNames = new Set((customerAllergies ?? []).map((allergy) => allergenNamesById.get(Number(allergy.AllergyTagID))).filter(Boolean))
+  const hasAllergenConflict = (menuItemAllergies ?? []).some((allergy) => customerAllergenNames.has(allergenNamesById.get(Number(allergy.AllergyTagID)) ?? ''))
+
   const { data: booking, error } = await admin.from('BOOKING').insert({
-    CustomerID: Number(customer.id),
+    CustomerID: customerId,
     OperatorID: 2,
     EventDate: String(bookingDetails.eventDate ?? ''),
     EventTime: String(bookingDetails.eventTime ?? ''),
     Venue: String(bookingDetails.venue ?? ''),
     GuestCount: Number(bookingDetails.guestCount ?? 0),
     Status: 'pending',
+    AllergenConflictFlag: hasAllergenConflict,
   }).select('BookingID').single()
 
   if (error || !booking) return { ok: false as const, error: error?.message ?? 'Unable to retrieve the booking ID.' }
