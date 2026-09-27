@@ -3,6 +3,10 @@
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { useAppState } from '@/lib/state';
 import { supabase } from '@/lib/supabase';
+import {
+  getCustomerAllergies,
+  setCustomerAllergies,
+} from '@/app/actions/allergy-actions';
 import type {
   AllergenType,
   FulfillmentMethod,
@@ -114,26 +118,20 @@ export default function InquiryPage() {
           }
         }
 
-        // Load the customer's saved allergy selections.
-        const customerId = Number(currentUser.id);
+        // Load the customer's saved allergy selections through the server action.
+        const customerAllergiesResult = await getCustomerAllergies();
 
-        const {
-          data: customerAllergies,
-          error: customerAllergiesError,
-        } = await supabase
-          .from('CUSTOMER_ALLERGY')
-          .select('AllergyTagID')
-          .eq('CustomerID', customerId);
-
-        if (customerAllergiesError) {
+        if (!customerAllergiesResult.ok) {
           console.error(
             'Failed to load customer allergies:',
-            customerAllergiesError
+            customerAllergiesResult.error
           );
           return;
         }
 
-        if (!customerAllergies || customerAllergies.length === 0) {
+        const customerAllergies = customerAllergiesResult.allergyTagIds;
+
+        if (customerAllergies.length === 0) {
           setDietary([]);
           setDietaryRestrictions([]);
           return;
@@ -189,51 +187,15 @@ export default function InquiryPage() {
       throw new Error('No customer is currently logged in.');
     }
 
-    const customerId = Number(currentUser.id);
+    // Convert allergen names into AllergyTagIDs, preserving the existing
+    // delete-then-insert behavior in the server action.
+    const selectedAllergyTagIds = allergyTagRows
+      .filter((tag) => dietary.includes(tag.AllergenName as AllergenType))
+      .map((tag) => tag.AllergyTagID);
 
-    if (!Number.isFinite(customerId)) {
-      throw new Error('Invalid customer ID.');
-    }
-
-    // Remove the customer's previous allergy selections.
-    const { error: deleteError } = await supabase
-      .from('CUSTOMER_ALLERGY')
-      .delete()
-      .eq('CustomerID', customerId);
-
-    if (deleteError) {
-      throw new Error(
-        `Could not clear previous allergy selections: ${deleteError.message}`
-      );
-    }
-
-    // Nothing more to insert if the customer selected no allergies.
-    if (dietary.length === 0) {
-      return;
-    }
-
-    // Convert allergen names into AllergyTagIDs.
-    const selectedRows = allergyTagRows
-      .filter((tag) =>
-        dietary.includes(tag.AllergenName as AllergenType)
-      )
-      .map((tag) => ({
-        CustomerID: customerId,
-        AllergyTagID: tag.AllergyTagID,
-      }));
-
-    if (selectedRows.length === 0) {
-      return;
-    }
-
-    const { error: insertError } = await supabase
-      .from('CUSTOMER_ALLERGY')
-      .insert(selectedRows);
-
-    if (insertError) {
-      throw new Error(
-        `Could not save allergy selections: ${insertError.message}`
-      );
+    const result = await setCustomerAllergies(selectedAllergyTagIds);
+    if (!result.ok) {
+      throw new Error(result.error);
     }
   };
 

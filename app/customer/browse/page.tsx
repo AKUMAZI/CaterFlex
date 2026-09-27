@@ -9,6 +9,7 @@ import { Check, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { createBooking } from '@/app/actions/booking-actions';
+import { getCustomerAllergies } from '@/app/actions/allergy-actions';
 import {
   checkAllergenConflict,
   getUniqueConflictingAllergens,
@@ -170,34 +171,19 @@ export default function BrowsePage() {
         return;
       }
 
-      const customerId = Number(currentUser.id);
+      // Get the customer's saved allergy relationships through the server action.
+      const customerAllergiesResult = await getCustomerAllergies();
 
-      if (Number.isNaN(customerId)) {
-        setDietaryRestrictions([]);
-        return;
-      }
-
-      // Get the customer's saved allergy relationships
-      const {
-        data: customerAllergies,
-        error: customerAllergyError,
-      } = await supabase
-        .from('CUSTOMER_ALLERGY')
-        .select('AllergyTagID')
-        .eq('CustomerID', customerId);
-
-      if (customerAllergyError) {
+      if (!customerAllergiesResult.ok) {
         console.error(
           'Customer allergy loading error:',
-          customerAllergyError
+          customerAllergiesResult.error
         );
 
         return;
       }
 
-      const allergyTagIds = (customerAllergies ?? []).map(
-        (item) => item.AllergyTagID
-      );
+      const allergyTagIds = customerAllergiesResult.allergyTagIds;
 
       // Customer has no saved allergies
       if (allergyTagIds.length === 0) {
