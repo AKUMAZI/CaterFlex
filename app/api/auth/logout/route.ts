@@ -12,7 +12,7 @@ export async function POST() {
       data: { session },
     } = await supabase.auth.getSession();
 
-    const userRole = session?.user?.user_metadata?.role ?? tableSession?.role;
+    const userRole = session?.user?.app_metadata?.role ?? tableSession?.role;
 
     if (session) {
       await supabase.auth.signOut();
