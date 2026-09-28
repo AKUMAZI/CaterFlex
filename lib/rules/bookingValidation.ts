@@ -5,7 +5,6 @@ import type {
   OperatorSettings,
   OrderType,
 } from '../types';
-
 import { isMealPrepBooking } from './mealPrep';
 
 export interface BookingRuleFailure {
@@ -20,313 +19,499 @@ export interface BookingRuleFailure {
 }
 
 export interface BookingValidationResult {
-  passed: boolean;
+  valid: boolean;
   failures: BookingRuleFailure[];
 }
 
-const DAY_NAMES = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
-
-function parseTimeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
+export interface DateAvailability {
+  available: boolean;
+  reason?: string;
+  remainingCapacity?: number;
 }
 
-function sameCalendarDate(a: string, b: string): boolean {
-  return a.slice(0, 10) === b.slice(0, 10);
-}
+/**
+ * Checks whether a booking falls within the operator's
+ * configured operating days and hours.
+ */
+function validateOperatingAvailability(
+  booking: Booking,
+  settings: OperatorSettings
+): BookingRuleFailure | null {
+  const eventDate = new Date(`${booking.eventDate}T00:00:00`);
 
-function validateOperatingWindow(
-  booking: Pick<Booking, 'eventDate' | 'eventTime'>,
-  settings: OperatorSettings,
-  label: string
-): BookingRuleFailure[] {
-  const failures: BookingRuleFailure[] = [];
-
-  const eventDate = new Date(`${booking.eventDate}T12:00:00`);
-  const dayOfWeek = eventDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
-
-  if (!settings.operatingDays.includes(dayOfWeek)) {
-    failures.push({
-      rule: 'operatingAvailability',
-      message: `${label} falls on ${DAY_NAMES[dayOfWeek]}, which is outside operating days`,
-    });
-  }
-
-  const eventMinutes = parseTimeToMinutes(booking.eventTime);
-  const startMinutes = parseTimeToMinutes(settings.operatingHoursStart);
-  const endMinutes = parseTimeToMinutes(settings.operatingHoursEnd);
-
-  if (eventMinutes < startMinutes || eventMinutes >= endMinutes) {
-    failures.push({
-      rule: 'operatingAvailability',
-      message: `${label} time ${booking.eventTime} is outside operating hours (${settings.operatingHoursStart}–${settings.operatingHoursEnd})`,
-    });
-  }
-
-  return failures;
-}
-
-export function validateBooking(
-  booking: Pick<
-    Booking,
-    | 'eventDate'
-    | 'eventTime'
-    | 'guestCount'
-    | 'id'
-    | 'status'
-    | 'orderType'
-    | 'selectedMenuItemIds'
-    | 'dietaryRestrictions'
-  >,
-  settings: OperatorSettings,
-  existingBookings: Booking[],
-  options?: {
-    excludeBookingId?: string;
-    menuItems?: MenuItem[];
-    ingredients?: Ingredient[];
-  }
-): BookingValidationResult {
-  const failures: BookingRuleFailure[] = [];
-
-  const eventDate = new Date(`${booking.eventDate}T12:00:00`);
-  const dayOfWeek = eventDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
-
-  /*
-   * MEAL PREP VALIDATION
-   */
-  if (isMealPrepBooking(booking)) {
-    const selectedItems = (options?.menuItems ?? []).filter((item) =>
-      booking.selectedMenuItemIds.includes(item.id)
-    );
-
-    // Allergen validation
-    const allergenConflicts = selectedItems.flatMap((item) =>
-      item.allergyTags.filter((tag) =>
-        booking.dietaryRestrictions.includes(tag)
-      )
-    );
-
-    if (allergenConflicts.length > 0) {
-      failures.push({
-        rule: 'allergenConflict',
-        message: `Allergen conflict detected: ${[
-          ...new Set(allergenConflicts),
-        ].join(', ')}`,
-      });
-    }
-
-    // Ingredient sufficiency validation
-    const shortfalls = selectedItems.flatMap((item) =>
-      item.requiredIngredients.filter((required) => {
-        const ingredient = options?.ingredients?.find(
-          (candidate) => candidate.id === required.id
-        );
-
-        return (
-          !ingredient ||
-          ingredient.currentStock <
-            required.qty * Math.max(1, booking.guestCount)
-        );
-      })
-    );
-
-    if (shortfalls.length > 0) {
-      failures.push({
-        rule: 'ingredientSufficiency',
-        message: `Ingredient shortage detected: ${[
-          ...new Set(shortfalls.map((item) => item.name)),
-        ].join(', ')}. Consider a scrap-based alternate.`,
-      });
-    }
-
-    // Operating day and time validation
-    failures.push(
-      ...validateOperatingWindow(booking, settings, 'Fulfillment')
-    );
-
-    // Meal-prep daily capacity validation
-    const confirmedMealPrepOnDate = existingBookings.filter(
-      (b) =>
-        b.orderType === 'meal_prep' &&
-        b.status === 'confirmed' &&
-        sameCalendarDate(b.eventDate, booking.eventDate) &&
-        b.id !== options?.excludeBookingId
-    ).length;
-
-    const mealPrepLimit =
-      settings.maxMealPrepFulfillmentsPerDay[dayOfWeek] ?? 0;
-
-    const projectedMealPrep = confirmedMealPrepOnDate + 1;
-
-    if (projectedMealPrep > mealPrepLimit) {
-      failures.push({
-        rule: 'mealPrepCapacity',
-        message: `${DAY_NAMES[dayOfWeek]} meal-prep capacity is ${mealPrepLimit} fulfillment(s); ${projectedMealPrep} would be scheduled on ${booking.eventDate.slice(
-          0,
-          10
-        )}`,
-      });
-    }
-
+  if (Number.isNaN(eventDate.getTime())) {
     return {
-      passed: failures.length === 0,
-      failures,
+      rule: 'operatingAvailability',
+      message: 'The selected event date is invalid.',
     };
   }
 
-  /*
-   * CATERING VALIDATION
-   */
+  const dayOfWeek = eventDate.getDay();
 
-  // Operating day and time validation
-  failures.push(...validateOperatingWindow(booking, settings, 'Event'));
-
-  // Catering daily capacity validation
-  const confirmedCateringOnDate = existingBookings.filter(
-    (b) =>
-      b.orderType !== 'meal_prep' &&
-      b.status === 'confirmed' &&
-      sameCalendarDate(b.eventDate, booking.eventDate) &&
-      b.id !== options?.excludeBookingId
-  ).length;
-
-  const dayLimit = settings.maxEventsPerDay[dayOfWeek] ?? 0;
-  const projectedCount = confirmedCateringOnDate + 1;
-
-  if (projectedCount > dayLimit) {
-    failures.push({
-      rule: 'dailyCapacity',
-      message: `${DAY_NAMES[dayOfWeek]} catering capacity is ${dayLimit} event(s); ${projectedCount} would be scheduled on ${booking.eventDate.slice(
-        0,
-        10
-      )}`,
-    });
+  // Check operating day
+  if (!settings.operatingDays.includes(dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6)) {
+    return {
+      rule: 'operatingAvailability',
+      message: 'The selected date is outside the operator\'s operating days.',
+    };
   }
 
-  // Guest count validation
+  // Check operating hours
+  const eventTime = booking.eventTime;
+
+  if (
+    eventTime < settings.operatingHoursStart ||
+    eventTime > settings.operatingHoursEnd
+  ) {
+    return {
+      rule: 'operatingAvailability',
+      message: `The selected time (${eventTime}) is outside operating hours (${settings.operatingHoursStart}–${settings.operatingHoursEnd}).`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Checks whether the guest count is within the operator's
+ * maximum allowed guests per event.
+ *
+ * The value comes from:
+ * OPERATOR_SETTINGS.MaxGuestCountPerEvent
+ *
+ * and is mapped into:
+ * settings.maxGuestsPerEvent
+ */
+function validateGuestCount(
+  booking: Booking,
+  settings: OperatorSettings
+): BookingRuleFailure | null {
   if (booking.guestCount > settings.maxGuestsPerEvent) {
-    failures.push({
+    return {
       rule: 'guestCount',
-      message: `Guest count (${booking.guestCount}) exceeds maximum of ${settings.maxGuestsPerEvent} per event`,
-    });
+      message: `Guest count (${booking.guestCount}) exceeds the maximum allowed guests per event (${settings.maxGuestsPerEvent}).`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Determines whether a booking should occupy an operator's
+ * daily capacity.
+ *
+ * Pending and confirmed bookings occupy capacity.
+ * Rejected and completed bookings do not.
+ */
+function occupiesCapacity(status: Booking['status']): boolean {
+  return status === 'pending' || status === 'confirmed';
+}
+
+/**
+ * Counts catering bookings occupying capacity on a specific date.
+ */
+function countCateringBookingsForDate(
+  bookings: Booking[],
+  eventDate: string
+): number {
+  return bookings.filter(
+    (booking) =>
+      booking.orderType === 'catering' &&
+      booking.eventDate === eventDate &&
+      occupiesCapacity(booking.status)
+  ).length;
+}
+
+/**
+ * Counts meal-prep bookings occupying capacity on a specific date.
+ */
+function countMealPrepBookingsForDate(
+  bookings: Booking[],
+  eventDate: string
+): number {
+  return bookings.filter(
+    (booking) =>
+      isMealPrepBooking(booking) &&
+      booking.eventDate === eventDate &&
+      occupiesCapacity(booking.status)
+  ).length;
+}
+
+/**
+ * Checks daily catering-event capacity.
+ */
+function validateCateringDailyCapacity(
+  booking: Booking,
+  bookings: Booking[],
+  settings: OperatorSettings
+): BookingRuleFailure | null {
+  const eventDate = new Date(`${booking.eventDate}T00:00:00`);
+
+  if (Number.isNaN(eventDate.getTime())) {
+    return null;
+  }
+
+  const dayOfWeek = eventDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+  const maxEvents =
+    settings.maxEventsPerDay[dayOfWeek] ?? 0;
+
+  const currentBookings = countCateringBookingsForDate(
+    bookings,
+    booking.eventDate
+  );
+
+  if (currentBookings >= maxEvents) {
+    return {
+      rule: 'dailyCapacity',
+      message: `The operator has already reached the maximum number of catering events for this date (${currentBookings}/${maxEvents}).`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Checks daily meal-prep capacity.
+ */
+function validateMealPrepDailyCapacity(
+  booking: Booking,
+  bookings: Booking[],
+  settings: OperatorSettings
+): BookingRuleFailure | null {
+  const eventDate = new Date(`${booking.eventDate}T00:00:00`);
+
+  if (Number.isNaN(eventDate.getTime())) {
+    return null;
+  }
+
+  const dayOfWeek = eventDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+  const maxMealPrepOrders =
+    settings.maxMealPrepFulfillmentsPerDay[dayOfWeek] ?? 0;
+
+  const currentMealPrepBookings = countMealPrepBookingsForDate(
+    bookings,
+    booking.eventDate
+  );
+
+  if (currentMealPrepBookings >= maxMealPrepOrders) {
+    return {
+      rule: 'mealPrepCapacity',
+      message: `The operator has already reached the maximum number of meal-prep orders for this date (${currentMealPrepBookings}/${maxMealPrepOrders}).`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Checks whether the customer's dietary restrictions conflict
+ * with the selected menu items.
+ */
+function validateAllergenConflicts(
+  booking: Booking,
+  menuItems: MenuItem[]
+): BookingRuleFailure | null {
+  if (!booking.dietaryRestrictions?.length) {
+    return null;
+  }
+
+  const selectedItems = menuItems.filter((item) =>
+    booking.selectedMenuItemIds.includes(item.id)
+  );
+
+  const conflicts = selectedItems.flatMap((item) =>
+    item.allergyTags.filter((allergen) =>
+      booking.dietaryRestrictions.includes(allergen)
+    )
+  );
+
+  const uniqueConflicts = [...new Set(conflicts)];
+
+  if (uniqueConflicts.length > 0) {
+    return {
+      rule: 'allergenConflict',
+      message: `Selected menu items contain allergen(s) matching the customer's dietary restrictions: ${uniqueConflicts.join(', ')}.`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Checks whether the required ingredients are sufficient
+ * for the selected menu items.
+ */
+function validateIngredientSufficiency(
+  booking: Booking,
+  menuItems: MenuItem[],
+  ingredients: Ingredient[]
+): BookingRuleFailure | null {
+  if (!ingredients.length) {
+    return null;
+  }
+
+  const selectedItems = menuItems.filter((item) =>
+    booking.selectedMenuItemIds.includes(item.id)
+  );
+
+  const insufficientIngredients: string[] = [];
+
+  for (const menuItem of selectedItems) {
+    for (const requiredIngredient of menuItem.requiredIngredients ?? []) {
+      const ingredient = ingredients.find(
+        (item) => item.id === requiredIngredient.id
+      );
+
+      if (!ingredient) {
+        continue;
+      }
+
+      const requiredQuantity =
+        requiredIngredient.qty * booking.guestCount;
+
+      if (ingredient.currentStock < requiredQuantity) {
+        insufficientIngredients.push(ingredient.name);
+      }
+    }
+  }
+
+  const uniqueInsufficientIngredients = [
+    ...new Set(insufficientIngredients),
+  ];
+
+  if (uniqueInsufficientIngredients.length > 0) {
+    return {
+      rule: 'ingredientSufficiency',
+      message: `Insufficient ingredient stock: ${uniqueInsufficientIngredients.join(', ')}.`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Main booking validation function.
+ */
+export function validateBooking(
+  booking: Booking,
+  settings: OperatorSettings,
+  bookings: Booking[] = [],
+  menuItems: MenuItem[] = [],
+  ingredients: Ingredient[] = []
+): BookingValidationResult {
+  const failures: BookingRuleFailure[] = [];
+
+  // ---------------------------------------------------------
+  // 1. Operating day and time
+  // ---------------------------------------------------------
+  const operatingFailure = validateOperatingAvailability(
+    booking,
+    settings
+  );
+
+  if (operatingFailure) {
+    failures.push(operatingFailure);
+  }
+
+  // ---------------------------------------------------------
+  // 2. Maximum guest count
+  // ---------------------------------------------------------
+  //
+  // Uses:
+  // OPERATOR_SETTINGS.MaxGuestCountPerEvent
+  //
+  // Example:
+  // MaxGuestCountPerEvent = 100
+  // Customer GuestCount = 120
+  //
+  // Result:
+  // guestCount validation failure
+  //
+  const guestCountFailure = validateGuestCount(
+    booking,
+    settings
+  );
+
+  if (guestCountFailure) {
+    failures.push(guestCountFailure);
+  }
+
+  // ---------------------------------------------------------
+  // 3. Daily capacity
+  // ---------------------------------------------------------
+  if (isMealPrepBooking(booking)) {
+    const mealPrepCapacityFailure =
+      validateMealPrepDailyCapacity(
+        booking,
+        bookings,
+        settings
+      );
+
+    if (mealPrepCapacityFailure) {
+      failures.push(mealPrepCapacityFailure);
+    }
+  } else {
+    const cateringCapacityFailure =
+      validateCateringDailyCapacity(
+        booking,
+        bookings,
+        settings
+      );
+
+    if (cateringCapacityFailure) {
+      failures.push(cateringCapacityFailure);
+    }
+  }
+
+  // ---------------------------------------------------------
+  // 4. Allergen filtering
+  // ---------------------------------------------------------
+  const allergenFailure = validateAllergenConflicts(
+    booking,
+    menuItems
+  );
+
+  if (allergenFailure) {
+    failures.push(allergenFailure);
+  }
+
+  // ---------------------------------------------------------
+  // 5. Ingredient sufficiency
+  // ---------------------------------------------------------
+  const ingredientFailure = validateIngredientSufficiency(
+    booking,
+    menuItems,
+    ingredients
+  );
+
+  if (ingredientFailure) {
+    failures.push(ingredientFailure);
   }
 
   return {
-    passed: failures.length === 0,
+    valid: failures.length === 0,
     failures,
   };
 }
 
-/*
- * Date availability lookup
- *
- * Reports how full a given calendar date is for the given order type,
- * counting confirmed bookings against the operator's configured
- * day-specific capacity.
+/**
+ * Checks availability for a specific date.
  */
-export interface DateAvailability {
-  date: string;
-  isOperatingDay: boolean;
-  bookedCount: number;
-  capacity: number;
-  available: boolean;
-}
-
 export function getDateAvailability(
-  dateStr: string,
+  date: string,
   orderType: OrderType,
   settings: OperatorSettings,
-  existingBookings: Booking[],
-  options?: {
-    excludeBookingId?: string;
-  }
+  bookings: Booking[]
 ): DateAvailability {
-  const date = new Date(`${dateStr}T12:00:00`);
-  const dayOfWeek = date.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  const eventDate = new Date(`${date}T00:00:00`);
 
-  const isOperating = settings.operatingDays.includes(dayOfWeek);
+  if (Number.isNaN(eventDate.getTime())) {
+    return {
+      available: false,
+      reason: 'Invalid date.',
+    };
+  }
 
-  const bookedCount = existingBookings.filter((b) => {
-    if (b.id === options?.excludeBookingId) {
-      return false;
-    }
+  const dayOfWeek = eventDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-    if (b.status !== 'confirmed') {
-      return false;
-    }
+  // ---------------------------------------------------------
+  // Check operating day
+  // ---------------------------------------------------------
+  if (!settings.operatingDays.includes(dayOfWeek)) {
+    return {
+      available: false,
+      reason: 'The operator is not available on this day.',
+    };
+  }
 
-    if (orderType === 'meal_prep') {
-      return (
-        b.orderType === 'meal_prep' &&
-        sameCalendarDate(b.eventDate, dateStr)
+  // ---------------------------------------------------------
+  // Check capacity
+  // ---------------------------------------------------------
+  if (orderType === 'meal_prep') {
+    const maxCapacity =
+      settings.maxMealPrepFulfillmentsPerDay[dayOfWeek] ?? 0;
+
+    const currentBookings =
+      countMealPrepBookingsForDate(
+        bookings,
+        date
       );
+
+    const remainingCapacity =
+      Math.max(maxCapacity - currentBookings, 0);
+
+    if (currentBookings >= maxCapacity) {
+      return {
+        available: false,
+        reason: `Meal-prep capacity is full (${currentBookings}/${maxCapacity}).`,
+        remainingCapacity: 0,
+      };
     }
 
-    return (
-      b.orderType !== 'meal_prep' &&
-      sameCalendarDate(b.eventDate, dateStr)
-    );
-  }).length;
+    return {
+      available: true,
+      remainingCapacity,
+    };
+  }
 
-  const capacity =
-    orderType === 'meal_prep'
-      ? settings.maxMealPrepFulfillmentsPerDay[dayOfWeek] ?? 0
-      : settings.maxEventsPerDay[dayOfWeek] ?? 0;
+  const maxCapacity =
+    settings.maxEventsPerDay[dayOfWeek] ?? 0;
+
+  const currentBookings =
+    countCateringBookingsForDate(
+      bookings,
+      date
+    );
+
+  const remainingCapacity =
+    Math.max(maxCapacity - currentBookings, 0);
+
+  if (currentBookings >= maxCapacity) {
+    return {
+      available: false,
+      reason: `Catering event capacity is full (${currentBookings}/${maxCapacity}).`,
+      remainingCapacity: 0,
+    };
+  }
 
   return {
-    date: dateStr,
-    isOperatingDay: isOperating,
-    bookedCount,
-    capacity,
-    available: isOperating && bookedCount < capacity,
+    available: true,
+    remainingCapacity,
   };
 }
 
-/*
- * Finds the nearest available date starting from the desired date.
+/**
+ * Finds the next available date within the next 90 days.
  */
 export function findNextAvailableDate(
-  desiredDate: string,
+  startDate: string,
   orderType: OrderType,
   settings: OperatorSettings,
-  existingBookings: Booking[],
-  options?: {
-    excludeBookingId?: string;
-    maxLookaheadDays?: number;
-    startOffsetDays?: number;
-  }
+  bookings: Booking[]
 ): string | null {
-  const lookahead = options?.maxLookaheadDays ?? 90;
-  const startOffset = options?.startOffsetDays ?? 0;
+  const date = new Date(`${startDate}T00:00:00`);
 
-  const base = new Date(`${desiredDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
 
-  for (let i = startOffset; i <= lookahead; i += 1) {
-    const candidate = new Date(base);
-
-    candidate.setDate(base.getDate() + i);
-
-    const candidateStr = candidate.toISOString().slice(0, 10);
+  for (let i = 0; i < 90; i++) {
+    const dateString = date.toISOString().split('T')[0];
 
     const availability = getDateAvailability(
-      candidateStr,
+      dateString,
       orderType,
       settings,
-      existingBookings,
-      options
+      bookings
     );
 
     if (availability.available) {
-      return candidateStr;
+      return dateString;
     }
+
+    date.setDate(date.getDate() + 1);
   }
 
   return null;
