@@ -316,10 +316,6 @@ export default function BrowsePage() {
         return;
       }
   
-      console.log(
-        'BOOKING ITEMS CREATED:',
-        bookingItems
-      );
   
       /*
        * Calculate invoice total
@@ -357,7 +353,7 @@ export default function BrowsePage() {
       } = await supabase
         .from('INVOICE')
         .insert({
-          BookingID: booking.BookingID,
+          BookingID: result.bookingId,
           TotalAmount: totalAmount,
           DateGenerated: new Date().toISOString(),
         })
@@ -379,7 +375,7 @@ export default function BrowsePage() {
           .delete()
           .eq(
             'BookingID',
-            booking.BookingID
+            result.bookingId
           );
   
         await supabase
@@ -387,7 +383,7 @@ export default function BrowsePage() {
           .delete()
           .eq(
             'BookingID',
-            booking.BookingID
+            result.bookingId
           );
   
         alert(

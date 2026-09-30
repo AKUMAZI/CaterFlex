@@ -33,7 +33,6 @@ export const mockOperatorSettings: OperatorSettings = {
     5: 5,
     6: 3,
   },
-  maxServingsPerMealPrepOrder: 20,
 };
 
 // Mock Users

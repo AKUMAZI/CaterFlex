@@ -160,9 +160,6 @@ export default function BookingsPage() {
             ...(bookingData ?? []).map(
               (booking) => booking.CustomerID
             ),
-            ...mealPrepOrders.map(
-              (order) => order.CustomerID
-            ),
           ].filter(
             (id): id is number => id !== null
           )
@@ -201,9 +198,6 @@ export default function BookingsPage() {
       const menuItemIds = Array.from(
         new Set([
           ...bookingItems.map(
-            (item) => item.MenuItemID
-          ),
-          ...mealPrepItems.map(
             (item) => item.MenuItemID
           ),
         ])
@@ -282,88 +276,7 @@ export default function BookingsPage() {
           };
         });
 
-      // ============================================================
-      // COMBINE MEAL PREP ORDERS
-      //
-      // IMPORTANT:
-      // Before this fix, items was simply [].
-      //
-      // Now we get the actual rows from MEAL_PREP_ITEM
-      // and connect them to MENU_ITEM.
-      // ============================================================
-
-      const mealPrepBookings: BookingDisplay[] =
-        mealPrepOrders.map((order) => {
-          const customer =
-            customers.find(
-              (item) =>
-                item.CustomerID ===
-                order.CustomerID
-            ) ?? null;
-
-          const items = mealPrepItems
-            .filter(
-              (item) =>
-                item.MealPrepOrderID ===
-                order.MealPrepOrderID
-            )
-            .map((mealPrepItem) => {
-              const menuItem =
-                menuItems.find(
-                  (item) =>
-                    item.MenuItemID ===
-                    mealPrepItem.MenuItemID
-                );
-
-              return {
-                name:
-                  menuItem?.ItemName ??
-                  `Menu Item #${mealPrepItem.MenuItemID}`,
-
-                quantity:
-                  mealPrepItem.Quantity,
-
-                price: Number(
-                  menuItem?.Price ?? 0
-                ),
-              };
-            });
-
-          return {
-            BookingID: -order.MealPrepOrderID,
-            CustomerID: order.CustomerID,
-            OperatorID: order.OperatorID,
-
-            EventDate: '',
-
-            EventTime:
-              order.RecurrencePattern ??
-              'Recurring',
-
-            OrderType: 'meal_prep',
-
-            Venue:
-              'Meal prep subscription',
-
-            GuestCount:
-              order.MealsPerCycle ?? 0,
-
-            Status: order.Status,
-
-            customer,
-
-            items,
-          };
-        });
-
-      // ============================================================
-      // SAVE TO UI
-      // ============================================================
-
-      setBookings([
-        ...combinedBookings,
-        ...mealPrepBookings,
-      ]);
+      setBookings(combinedBookings);
     } catch (error) {
       console.error(
         'Unexpected booking fetch error:',
@@ -423,8 +336,7 @@ export default function BookingsPage() {
           booking.BookingID === bookingId
             ? {
                 ...booking,
-                Status:
-                  updatedBooking.Status,
+                Status: status,
               }
             : booking
         )
