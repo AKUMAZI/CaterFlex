@@ -18,8 +18,6 @@ import {
   getDateAvailability,
   findNextAvailableDate,
 } from '@/lib/rules/bookingValidation';
-import { supabase } from '@/lib/supabase';
-
 import { useRouter } from 'next/navigation';
 
 import { Card } from '@/components/ui/card';
@@ -275,21 +273,30 @@ export default function InquiryPage() {
    * ============================================================
    */
 
-          if (validTags.length > 0) {
-            setAllergenOptions(
-              validTags.map((tag) => tag.AllergenName as AllergenType)
-            );
-          }
+  const [allergenOptions, setAllergenOptions] = useState<AllergenType[]>(ALLERGEN_OPTIONS);
+  const [loadingAllergies, setLoadingAllergies] = useState(true);
+  const [allergyTagRows, setAllergyTagRows] = useState<Array<{ AllergyTagID: number; AllergenName: string }>>([]);
+
+  const FALLBACK_ALLERGEN_OPTIONS = ALLERGEN_OPTIONS;
+
+  useEffect(() => {
+    async function loadAllergies() {
+      try {
+        const { data: tags, error } = await supabase
+          .from('ALLERGY_TAG')
+          .select('AllergyTagID, AllergenName');
+
+        if (error) throw error;
+        const validTags = (tags ?? []) as Array<{ AllergyTagID: number; AllergenName: string }>;
+        setAllergyTagRows(validTags);
+        if (validTags.length > 0) {
+          setAllergenOptions(validTags.map((tag) => tag.AllergenName as AllergenType));
         }
 
-        // Load the customer's saved allergy selections through the server action.
         const customerAllergiesResult = await getCustomerAllergies();
 
         if (!customerAllergiesResult.ok) {
-          console.error(
-            'Failed to load customer allergies:',
-            customerAllergiesResult.error
-          );
+          console.error('Failed to load customer allergies:', customerAllergiesResult.error);
           return;
         }
 
@@ -301,23 +308,9 @@ export default function InquiryPage() {
           return;
         }
 
-        // Convert AllergyTagIDs into allergen names.
         const savedAllergies = customerAllergies
-            .map((customerAllergy) => {
-              const tag = (tags ?? []).find(
-                (item) =>
-                  item.AllergyTagID === customerAllergy.AllergyTagID
-              );
-
-              return tag?.AllergenName;
-            })
-            .filter((allergen): allergen is AllergenType => {
-              if (!allergen) return false;
-
-              return FALLBACK_ALLERGEN_OPTIONS.some(
-                (option) => option === allergen
-              );
-          });
+          .map((customerAllergy) => validTags.find((item) => item.AllergyTagID === customerAllergy.AllergyTagID)?.AllergenName)
+          .filter((allergen): allergen is AllergenType => Boolean(allergen) && FALLBACK_ALLERGEN_OPTIONS.includes(allergen as AllergenType));
 
         setDietary(savedAllergies);
         setDietaryRestrictions(savedAllergies);
@@ -328,18 +321,13 @@ export default function InquiryPage() {
       }
     }
 
-    return getDateAvailability(
-      activeDate,
-      customerOrderType,
-      operatorSettings,
-      availabilityBookings
-    );
-  }, [
-    activeDate,
-    customerOrderType,
-    operatorSettings,
-    availabilityBookings,
-  ]);
+    loadAllergies();
+  }, [setDietaryRestrictions]);
+
+  const dateAvailability = useMemo(() => {
+    return getDateAvailability(activeDate, customerOrderType, operatorSettings, availabilityBookings);
+  }, [activeDate, customerOrderType, operatorSettings, availabilityBookings]);
+
 
   /*
    * ============================================================
@@ -435,6 +423,7 @@ export default function InquiryPage() {
    * ============================================================
    */
 
+  const saveAllergies = async () => {
     // Convert allergen names into AllergyTagIDs, preserving the existing
     // delete-then-insert behavior in the server action.
     const selectedAllergyTagIds = allergyTagRows

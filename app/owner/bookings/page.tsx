@@ -844,24 +844,12 @@ export default function BookingsPage() {
                                   </span>
 
                                   <span className="text-sm text-muted-foreground">
-                                    ₱
-                                    {(
-                                      item.price *
-                                      item.quantity
-                                    ).toLocaleString(
-                                      'en-PH',
-                                      {
-                                        booking.GuestCount
-                                      }
-                                      {booking.OrderType ===
-                                      'meal_prep'
-                                        ? ' servings • '
-                                        : ' guests • '}
-                                      {
-                                        booking.EventTime
-                                      }
-                                    </p>
-                                  </div>
+                                    ₱{(item.price * item.quantity).toLocaleString('en-PH')}{' '}
+                                    {booking.OrderType === 'meal_prep'
+                                      ? `${booking.GuestCount} servings • `
+                                      : `${booking.GuestCount} guests • `}
+                                    {booking.EventTime}
+                                  </span>
 
                                   <div className="ml-auto text-right">
 
@@ -887,24 +875,11 @@ export default function BookingsPage() {
 
                                   </div>
                                 </div>
+                              )
+                            ))}
 
-                                <ChevronDown
-                                  className={`w-5 h-5 text-muted-foreground transition-transform ml-4 ${
-                                    expandedId ===
-                                    booking.BookingID
-                                      ? 'rotate-180'
-                                      : ''
-                                  }`}
-                                />
-                              </button>
-
-                              {/* ==================================================
-                                  EXPANDED BOOKING
-                              ================================================== */}
-
-                              {expandedId ===
-                                booking.BookingID && (
-                                <div className="border-t border-border p-6 bg-muted/20">
+                          </div>
+                        </div>
 
                                   {/* CUSTOMER + VENUE */}
 
