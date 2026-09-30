@@ -128,14 +128,17 @@ export function applyBookingValidation(
   menuItems: MenuItem[] = [],
   ingredients: Ingredient[] = []
 ): Booking {
-  const validation = validateBooking(booking, settings, existingBookings, {
-    excludeBookingId: booking.id,
+  const validation = validateBooking(
+    booking,
+    settings,
+    existingBookings,
     menuItems,
-    ingredients,
-  });
+    ingredients
+  );
+
   return {
     ...booking,
-    validationPassed: validation.passed,
+    validationPassed: validation.valid,
     ruleViolations: validation.failures.map((f) => f.message),
   };
 }

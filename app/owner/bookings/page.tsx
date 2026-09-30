@@ -59,6 +59,13 @@ type BookingItem = {
   Quantity: number;
 };
 
+type MealPrepItem = {
+  MealPrepItemID: number;
+  MealPrepOrderID: number;
+  MenuItemID: number;
+  Quantity: number;
+};
+
 type MenuItem = {
   MenuItemID: number;
   ItemName: string;
@@ -73,6 +80,8 @@ type BookingDisplay = Booking & {
     price: number;
   }[];
 };
+
+const OPERATOR_ID = 2;
 
 const statusConfig: Record<
   string,
@@ -112,7 +121,8 @@ export default function BookingsPage() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
-  const [activeSection, setActiveSection] = useState<BookingSection>('all');
+  const [activeSection, setActiveSection] =
+    useState<BookingSection>('all');
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // ============================================================
@@ -140,16 +150,22 @@ export default function BookingsPage() {
         return;
       }
 
-      const bookingIds = (bookingData ?? []).map(
-        (booking) => booking.BookingID
-      );
+      // ============================================================
+      // GET CUSTOMER IDS
+      // ============================================================
 
       const customerIds = Array.from(
         new Set(
           [
-            ...(bookingData ?? []).map((booking) => booking.CustomerID),
-            ...mealPrepOrders.map((order) => order.CustomerID),
-          ].filter((id): id is number => id !== null)
+            ...(bookingData ?? []).map(
+              (booking) => booking.CustomerID
+            ),
+            ...mealPrepOrders.map(
+              (order) => order.CustomerID
+            ),
+          ].filter(
+            (id): id is number => id !== null
+          )
         )
       );
 
@@ -169,21 +185,28 @@ export default function BookingsPage() {
       }
 
       // ============================================================
-      // GET BOOKING ITEMS
+      // GET CATERING BOOKING ITEMS
       // ============================================================
 
       const bookingItems = bookingItemData;
 
       // ============================================================
-      // GET MENU ITEMS
+      // GET ALL MENU ITEMS
+      //
+      // We combine MenuItemIDs from both:
+      // - BOOKING_ITEM
+      // - MEAL_PREP_ITEM
       // ============================================================
 
       const menuItemIds = Array.from(
-        new Set(
-          bookingItems.map(
+        new Set([
+          ...bookingItems.map(
             (item) => item.MenuItemID
-          )
-        )
+          ),
+          ...mealPrepItems.map(
+            (item) => item.MenuItemID
+          ),
+        ])
       );
 
       let menuItems: MenuItem[] = [];
@@ -205,12 +228,13 @@ export default function BookingsPage() {
             menuItemError
           );
         } else {
-          menuItems = menuItemData ?? [];
+          menuItems =
+            (menuItemData ?? []) as MenuItem[];
         }
       }
 
       // ============================================================
-      // COMBINE EVERYTHING FOR THE UI
+      // COMBINE CATERING BOOKINGS
       // ============================================================
 
       const combinedBookings: BookingDisplay[] =
@@ -258,25 +282,98 @@ export default function BookingsPage() {
           };
         });
 
-      const mealPrepBookings: BookingDisplay[] = mealPrepOrders.map((order) => ({
-        BookingID: -order.MealPrepOrderID,
-        CustomerID: order.CustomerID,
-        OperatorID: order.OperatorID,
-        EventDate: '',
-        EventTime: order.RecurrencePattern ?? 'Recurring',
-        OrderType: 'meal_prep',
-        Venue: 'Meal prep subscription',
-        GuestCount: order.MealsPerCycle ?? 0,
-        Status: order.Status,
-        customer: customers.find((customer) => customer.CustomerID === order.CustomerID) ?? null,
-        items: [],
-      }));
+      // ============================================================
+      // COMBINE MEAL PREP ORDERS
+      //
+      // IMPORTANT:
+      // Before this fix, items was simply [].
+      //
+      // Now we get the actual rows from MEAL_PREP_ITEM
+      // and connect them to MENU_ITEM.
+      // ============================================================
 
-      setBookings([...combinedBookings, ...mealPrepBookings]);
+      const mealPrepBookings: BookingDisplay[] =
+        mealPrepOrders.map((order) => {
+          const customer =
+            customers.find(
+              (item) =>
+                item.CustomerID ===
+                order.CustomerID
+            ) ?? null;
+
+          const items = mealPrepItems
+            .filter(
+              (item) =>
+                item.MealPrepOrderID ===
+                order.MealPrepOrderID
+            )
+            .map((mealPrepItem) => {
+              const menuItem =
+                menuItems.find(
+                  (item) =>
+                    item.MenuItemID ===
+                    mealPrepItem.MenuItemID
+                );
+
+              return {
+                name:
+                  menuItem?.ItemName ??
+                  `Menu Item #${mealPrepItem.MenuItemID}`,
+
+                quantity:
+                  mealPrepItem.Quantity,
+
+                price: Number(
+                  menuItem?.Price ?? 0
+                ),
+              };
+            });
+
+          return {
+            BookingID: -order.MealPrepOrderID,
+            CustomerID: order.CustomerID,
+            OperatorID: order.OperatorID,
+
+            EventDate: '',
+
+            EventTime:
+              order.RecurrencePattern ??
+              'Recurring',
+
+            OrderType: 'meal_prep',
+
+            Venue:
+              'Meal prep subscription',
+
+            GuestCount:
+              order.MealsPerCycle ?? 0,
+
+            Status: order.Status,
+
+            customer,
+
+            items,
+          };
+        });
+
+      // ============================================================
+      // SAVE TO UI
+      // ============================================================
+
+      setBookings([
+        ...combinedBookings,
+        ...mealPrepBookings,
+      ]);
     } catch (error) {
       console.error(
         'Unexpected booking fetch error:',
         error
+      );
+
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load bookings.'
       );
 
       setBookings([]);
@@ -285,7 +382,10 @@ export default function BookingsPage() {
     }
   };
 
-  // Load bookings when page opens
+  // ============================================================
+  // LOAD WHEN PAGE OPENS
+  // ============================================================
+
   useEffect(() => {
     loadBookings();
   }, []);
@@ -301,9 +401,9 @@ export default function BookingsPage() {
     if (updatingId !== null) {
       return;
     }
-  
+
     setUpdatingId(bookingId);
-  
+
     try {
       const result = await updateBookingStatusAction(bookingId, status);
 
@@ -323,7 +423,8 @@ export default function BookingsPage() {
           booking.BookingID === bookingId
             ? {
                 ...booking,
-                Status: status,
+                Status:
+                  updatedBooking.Status,
               }
             : booking
         )
@@ -333,35 +434,54 @@ export default function BookingsPage() {
         'Unexpected booking status error:',
         error
       );
-  
+
       alert(
-        'An unexpected error occurred.'
+        error instanceof Error
+          ? error.message
+          : 'An unexpected error occurred.'
       );
     } finally {
       setUpdatingId(null);
     }
   };
 
+  // ============================================================
+  // BOOKING SECTIONS
+  // ============================================================
+
   const bookingSections = [
     {
       key: 'catering' as const,
       label: 'Catering Events',
-      description: 'Full-service catering requests and event bookings',
+      description:
+        'Full-service catering requests and event bookings',
       icon: Utensils,
-      bookings: bookings.filter((booking) => booking.OrderType !== 'meal_prep'),
+      bookings: bookings.filter(
+        (booking) =>
+          booking.OrderType !== 'meal_prep'
+      ),
     },
+
     {
       key: 'meal_prep' as const,
       label: 'Meal Prep Orders',
-      description: 'Recurring meal prep orders and fulfillment requests',
+      description:
+        'Recurring meal prep orders and fulfillment requests',
       icon: PackageCheck,
-      bookings: bookings.filter((booking) => booking.OrderType === 'meal_prep'),
+      bookings: bookings.filter(
+        (booking) =>
+          booking.OrderType === 'meal_prep'
+      ),
     },
   ];
 
-  const visibleSections = activeSection === 'all'
-    ? bookingSections
-    : bookingSections.filter((section) => section.key === activeSection);
+  const visibleSections =
+    activeSection === 'all'
+      ? bookingSections
+      : bookingSections.filter(
+          (section) =>
+            section.key === activeSection
+        );
 
   // ============================================================
   // PAGE
@@ -383,24 +503,64 @@ export default function BookingsPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3" role="tablist" aria-label="Booking type">
+        {/* BOOKING TYPE TABS */}
+
+        <div
+          className="flex flex-wrap gap-3"
+          role="tablist"
+          aria-label="Booking type"
+        >
           {[
-            { key: 'all' as const, label: 'All bookings', count: bookings.length },
-            { key: 'catering' as const, label: 'Catering events', count: bookingSections[0].bookings.length },
-            { key: 'meal_prep' as const, label: 'Meal prep orders', count: bookingSections[1].bookings.length },
+            {
+              key: 'all' as const,
+              label: 'All bookings',
+              count: bookings.length,
+            },
+
+            {
+              key: 'catering' as const,
+              label: 'Catering events',
+              count:
+                bookingSections[0].bookings
+                  .length,
+            },
+
+            {
+              key: 'meal_prep' as const,
+              label: 'Meal prep orders',
+              count:
+                bookingSections[1].bookings
+                  .length,
+            },
           ].map((tab) => (
             <Button
               key={tab.key}
               type="button"
-              variant={activeSection === tab.key ? 'default' : 'outline'}
-              onClick={() => setActiveSection(tab.key)}
+              variant={
+                activeSection === tab.key
+                  ? 'default'
+                  : 'outline'
+              }
+              onClick={() =>
+                setActiveSection(tab.key)
+              }
               role="tab"
-              aria-selected={activeSection === tab.key}
+              aria-selected={
+                activeSection === tab.key
+              }
               className="gap-2"
             >
-              {tab.key === 'meal_prep' ? <PackageCheck className="h-4 w-4" /> : <Utensils className="h-4 w-4" />}
+              {tab.key === 'meal_prep' ? (
+                <PackageCheck className="h-4 w-4" />
+              ) : (
+                <Utensils className="h-4 w-4" />
+              )}
+
               {tab.label}
-              <span className="rounded-full bg-background/30 px-2 py-0.5 text-xs">{tab.count}</span>
+
+              <span className="rounded-full bg-background/30 px-2 py-0.5 text-xs">
+                {tab.count}
+              </span>
             </Button>
           ))}
         </div>
@@ -413,105 +573,137 @@ export default function BookingsPage() {
               Loading bookings...
             </p>
           </Card>
-
         ) : loadError ? (
           <Card className="p-12 text-center">
-            <p className="font-medium text-destructive">Unable to load bookings</p>
-            <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+            <p className="font-medium text-destructive">
+              Unable to load bookings
+            </p>
+
+            <p className="mt-2 text-sm text-muted-foreground">
+              {loadError}
+            </p>
           </Card>
-
         ) : bookings.length === 0 ? (
-
-          /* NO BOOKINGS */
-
           <Card className="p-12 text-center">
             <p className="text-muted-foreground">
               No bookings yet
             </p>
           </Card>
-
         ) : (
-
-          /* BOOKINGS */
-
           <div className="space-y-8">
+
             {visibleSections.map((section) => {
-              const SectionIcon = section.icon;
+              const SectionIcon =
+                section.icon;
 
               return (
-                <section key={section.key} aria-labelledby={`${section.key}-heading`}>
+                <section
+                  key={section.key}
+                  aria-labelledby={`${section.key}-heading`}
+                >
+                  {/* SECTION HEADER */}
+
                   <div className="mb-3 flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <SectionIcon className="h-5 w-5" aria-hidden="true" />
+                      <SectionIcon
+                        className="h-5 w-5"
+                        aria-hidden="true"
+                      />
                     </div>
+
                     <div>
-                      <h2 id={`${section.key}-heading`} className="font-heading text-xl font-semibold text-surface-foreground">
+                      <h2
+                        id={`${section.key}-heading`}
+                        className="font-heading text-xl font-semibold text-surface-foreground"
+                      >
                         {section.label}
                       </h2>
-                      <p className="text-sm text-muted-foreground">{section.description}</p>
+
+                      <p className="text-sm text-muted-foreground">
+                        {section.description}
+                      </p>
                     </div>
+
                     <span className="ml-auto rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground">
                       {section.bookings.length}
                     </span>
                   </div>
 
-                  {section.bookings.length === 0 ? (
+                  {section.bookings.length ===
+                  0 ? (
                     <Card className="p-6 text-center">
-                      <p className="text-sm text-muted-foreground">No {section.key === 'meal_prep' ? 'meal prep orders' : 'catering events'} yet.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No{' '}
+                        {section.key ===
+                        'meal_prep'
+                          ? 'meal prep orders'
+                          : 'catering events'}{' '}
+                        yet.
+                      </p>
                     </Card>
                   ) : (
                     <div className="space-y-4">
-                      {section.bookings.map((booking) => {
-              const statusKey =
-                booking.Status?.toLowerCase() ??
-                'pending';
 
-              const status =
-                statusConfig[statusKey] ??
-                statusConfig.pending;
+                      {section.bookings.map(
+                        (booking) => {
+                          const statusKey =
+                            booking.Status?.toLowerCase() ??
+                            'pending';
 
-              const StatusIcon =
-                status.icon;
+                          const status =
+                            statusConfig[
+                              statusKey
+                            ] ??
+                            statusConfig.pending;
 
-              const totalCost =
-                booking.items.reduce(
-                  (total, item) =>
-                    total +
-                    item.price *
-                      item.quantity,
-                  0
-                );
+                          const StatusIcon =
+                            status.icon;
 
-              return (
-                <Card
-                  key={booking.BookingID}
-                  className="overflow-hidden"
-                >
+                          const totalCost =
+                            booking.items.reduce(
+                              (
+                                total,
+                                item
+                              ) =>
+                                total +
+                                item.price *
+                                  item.quantity,
+                              0
+                            );
 
-                  {/* ==================================================
-                      BOOKING SUMMARY
-                  ================================================== */}
+                          return (
+                            <Card
+                              key={
+                                booking.BookingID
+                              }
+                              className="overflow-hidden"
+                            >
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedId(
-                        expandedId ===
-                          booking.BookingID
-                          ? null
-                          : booking.BookingID
-                      )
-                    }
-                    className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
-                  >
+                              {/* ==================================================
+                                  BOOKING SUMMARY
+                              ================================================== */}
 
-                    <div className="flex items-center gap-4 flex-1 text-left">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedId(
+                                    expandedId ===
+                                      booking.BookingID
+                                      ? null
+                                      : booking.BookingID
+                                  )
+                                }
+                                className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
+                              >
+                                <div className="flex items-center gap-4 flex-1 text-left">
 
-                      <div>
-                        <p className="font-semibold text-card-foreground">
-                          {booking.customer?.Name ??
-                            'Unknown customer'}
-                        </p>
+                                  <div>
+                                    <p className="font-semibold text-card-foreground">
+                                      {booking
+                                        .customer
+                                        ?.Name ??
+                                        'Unknown customer'}
+                                    </p>
 
                         <p className="text-sm text-muted-foreground">
                           {booking.OrderType === 'meal_prep' ? 'Meal prep order' : 'Catering event'} #{Math.abs(booking.BookingID)}
@@ -659,123 +851,275 @@ export default function BookingsPage() {
                                     ).toLocaleString(
                                       'en-PH',
                                       {
-                                        minimumFractionDigits: 2,
+                                        booking.GuestCount
                                       }
-                                    )}
-                                  </span>
+                                      {booking.OrderType ===
+                                      'meal_prep'
+                                        ? ' servings • '
+                                        : ' guests • '}
+                                      {
+                                        booking.EventTime
+                                      }
+                                    </p>
+                                  </div>
 
+                                  <div className="ml-auto text-right">
+
+                                    <p className="text-sm text-muted-foreground">
+                                      {booking.EventDate
+                                        ? new Date(
+                                            `${booking.EventDate}T00:00:00`
+                                          ).toLocaleDateString()
+                                        : 'Recurring order'}
+                                    </p>
+
+                                    <div className="mt-1">
+                                      <span
+                                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${status.className}`}
+                                      >
+                                        <StatusIcon className="w-3 h-3" />
+
+                                        {
+                                          status.label
+                                        }
+                                      </span>
+                                    </div>
+
+                                  </div>
                                 </div>
 
-                              )
-                            )
+                                <ChevronDown
+                                  className={`w-5 h-5 text-muted-foreground transition-transform ml-4 ${
+                                    expandedId ===
+                                    booking.BookingID
+                                      ? 'rotate-180'
+                                      : ''
+                                  }`}
+                                />
+                              </button>
 
-                          )}
+                              {/* ==================================================
+                                  EXPANDED BOOKING
+                              ================================================== */}
 
-                        </div>
-                      </div>
+                              {expandedId ===
+                                booking.BookingID && (
+                                <div className="border-t border-border p-6 bg-muted/20">
 
-                      {/* ==================================================
-                          TOTAL
-                      ================================================== */}
+                                  {/* CUSTOMER + VENUE */}
 
-                      <div className="border-t border-border pt-6 mb-6">
+                                  <div className="grid md:grid-cols-2 gap-6 mb-6">
 
-                        <div className="flex justify-between items-center">
+                                    <div>
+                                      <p className="text-sm text-muted-foreground mb-1">
+                                        Customer
+                                      </p>
 
-                          <span className="font-semibold text-card-foreground">
-                            Estimated Total:
-                          </span>
+                                      <p className="font-medium text-card-foreground">
+                                        {booking
+                                          .customer
+                                          ?.Name ??
+                                          'Unknown customer'}
+                                      </p>
 
-                          <span className="text-lg font-bold text-primary">
-                            ₱
-                            {totalCost.toLocaleString(
-                              'en-PH',
-                              {
-                                minimumFractionDigits: 2,
-                              }
-                            )}
-                          </span>
+                                      {booking.customer
+                                        ?.Email && (
+                                        <p className="text-sm text-muted-foreground mt-1">
+                                          {
+                                            booking
+                                              .customer
+                                              .Email
+                                          }
+                                        </p>
+                                      )}
 
-                        </div>
+                                      {booking.customer
+                                        ?.Contact && (
+                                        <p className="text-sm text-muted-foreground mt-1">
+                                          {
+                                            booking
+                                              .customer
+                                              .Contact
+                                          }
+                                        </p>
+                                      )}
+                                    </div>
 
-                      </div>
+                                    <div>
+                                      <p className="text-sm text-muted-foreground mb-1">
+                                        Venue
+                                      </p>
 
-                      {/* ==================================================
-                          ACTIONS
-                      ================================================== */}
+                                      <p className="font-medium text-card-foreground">
+                                        {booking.Venue ||
+                                          'No venue provided'}
+                                      </p>
 
-                      {booking.Status?.toLowerCase() ===
-                        'pending' && (
+                                      <p className="text-sm text-muted-foreground mt-2">
+                                        Event time:{' '}
+                                        {
+                                          booking.EventTime
+                                        }
+                                      </p>
+                                    </div>
 
-                        <div className="flex gap-3">
+                                  </div>
 
-                          {/* CONFIRM */}
+                                  {/* ==================================================
+                                      SELECTED MENU ITEMS
+                                  ================================================== */}
 
-                          <Button
-                            onClick={() =>
-                              updateBookingStatus(
-                                booking.BookingID,
-                                'confirmed'
-                              )
-                            }
-                            disabled={
-                              updatingId ===
-                              booking.BookingID
-                            }
-                            className="flex-1 bg-green-600 text-white gap-2 hover:bg-brand"
-                          >
+                                  <div className="mb-6">
 
-                            <Check className="w-4 h-4" />
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                      Selected Items
+                                    </p>
 
-                            {updatingId ===
-                            booking.BookingID
-                              ? 'Updating...'
-                              : 'Confirm Booking'}
+                                    <div className="space-y-2">
 
-                          </Button>
+                                      {booking.items
+                                        .length ===
+                                      0 ? (
+                                        <p className="text-sm text-muted-foreground">
+                                          No menu items recorded.
+                                        </p>
+                                      ) : (
+                                        booking.items.map(
+                                          (
+                                            item,
+                                            index
+                                          ) => (
+                                            <div
+                                              key={`${booking.BookingID}-${item.name}-${index}`}
+                                              className="flex justify-between items-center p-3 bg-muted rounded-lg"
+                                            >
+                                              <span className="font-medium text-card-foreground">
+                                                {
+                                                  item.name
+                                                }
 
-                          {/* REJECT */}
+                                                {item.quantity >
+                                                  1 &&
+                                                  ` × ${item.quantity}`}
+                                              </span>
 
-                          <Button
-                            onClick={() =>
-                              updateBookingStatus(
-                                booking.BookingID,
-                                'rejected'
-                              )
-                            }
-                            disabled={
-                              updatingId ===
-                              booking.BookingID
-                            }
-                            variant="outline"
-                            className="flex-1 gap-2"
-                          >
+                                              <span className="text-sm text-muted-foreground">
+                                                ₱
+                                                {(
+                                                  item.price *
+                                                  item.quantity
+                                                ).toLocaleString(
+                                                  'en-PH',
+                                                  {
+                                                    minimumFractionDigits: 2,
+                                                  }
+                                                )}
+                                              </span>
+                                            </div>
+                                          )
+                                        )
+                                      )}
 
-                            <X className="w-4 h-4" />
+                                    </div>
+                                  </div>
 
-                            {updatingId ===
-                            booking.BookingID
-                              ? 'Updating...'
-                              : 'Reject'}
+                                  {/* ==================================================
+                                      TOTAL
+                                  ================================================== */}
 
-                          </Button>
+                                  <div className="border-t border-border pt-6 mb-6">
 
-                        </div>
+                                    <div className="flex justify-between items-center">
 
+                                      <span className="font-semibold text-card-foreground">
+                                        Estimated Total:
+                                      </span>
+
+                                      <span className="text-lg font-bold text-primary">
+                                        ₱
+                                        {totalCost.toLocaleString(
+                                          'en-PH',
+                                          {
+                                            minimumFractionDigits: 2,
+                                          }
+                                        )}
+                                      </span>
+
+                                    </div>
+                                  </div>
+
+                                  {/* ==================================================
+                                      ACTIONS
+                                  ================================================== */}
+
+                                  {booking.Status?.toLowerCase() ===
+                                    'pending' && (
+                                    <div className="flex gap-3">
+
+                                      {/* CONFIRM */}
+
+                                      <Button
+                                        onClick={() =>
+                                          updateBookingStatus(
+                                            booking.BookingID,
+                                            'confirmed'
+                                          )
+                                        }
+                                        disabled={
+                                          updatingId ===
+                                          booking.BookingID
+                                        }
+                                        className="flex-1 bg-green-600 text-white gap-2 hover:bg-brand"
+                                      >
+                                        <Check className="w-4 h-4" />
+
+                                        {updatingId ===
+                                        booking.BookingID
+                                          ? 'Updating...'
+                                          : 'Confirm Booking'}
+                                      </Button>
+
+                                      {/* REJECT */}
+
+                                      <Button
+                                        onClick={() =>
+                                          updateBookingStatus(
+                                            booking.BookingID,
+                                            'rejected'
+                                          )
+                                        }
+                                        disabled={
+                                          updatingId ===
+                                          booking.BookingID
+                                        }
+                                        variant="outline"
+                                        className="flex-1 gap-2"
+                                      >
+                                        <X className="w-4 h-4" />
+
+                                        {updatingId ===
+                                        booking.BookingID
+                                          ? 'Updating...'
+                                          : 'Reject'}
+                                      </Button>
+
+                                    </div>
+                                  )}
+
+                                </div>
+                              )}
+
+                            </Card>
+                          );
+                        }
                       )}
 
-                    </div>
-
-                  )}
-
-                </Card>
-              );
-                      })}
                     </div>
                   )}
                 </section>
               );
             })}
+
           </div>
         )}
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { DashboardLayout } from '@/app/dashboard-layout';
+import { CustomerShell } from '@/app/customer/customer-shell';
 import { useAppState } from '@/lib/state';
 import { supabase } from '@/lib/supabase';
 import {
@@ -9,42 +9,211 @@ import {
 } from '@/app/actions/allergy-actions';
 import type {
   AllergenType,
+  Booking,
   FulfillmentMethod,
   MealPrepFrequency,
   OrderType,
 } from '@/lib/types';
+import {
+  getDateAvailability,
+  findNextAvailableDate,
+} from '@/lib/rules/bookingValidation';
+import { supabase } from '@/lib/supabase';
+
 import { useRouter } from 'next/navigation';
+
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
-import { CalendarDays, UtensilsCrossed } from 'lucide-react';
 
-type AllergyTagRow = {
-  AllergyTagID: number;
-  AllergenName: string;
-};
+import { useEffect, useMemo, useState } from 'react';
 
-const FALLBACK_ALLERGEN_OPTIONS: AllergenType[] = [
+import {
+  CalendarDays,
+  UtensilsCrossed,
+  AlertTriangle,
+  Sparkles,
+} from 'lucide-react';
+
+const ALLERGEN_OPTIONS: AllergenType[] = [
   'shellfish',
   'peanuts',
   'dairy',
   'gluten',
   'eggs',
   'soy',
+  'tree_nuts',
+  'other',
 ];
+
+function formatDateLabel(dateStr: string) {
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString(
+    undefined,
+    {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    }
+  );
+}
 
 export default function InquiryPage() {
   const router = useRouter();
 
   const {
-    currentUser,
+    bookings,
+    operatorSettings,
     customerOrderType,
+    loadOperatorSettings,
     setCustomerOrderType,
     setCustomerBookingDraft,
     setDietaryRestrictions,
   } = useAppState();
 
   const isMealPrep = customerOrderType === 'meal_prep';
+
+  useEffect(() => {
+    loadOperatorSettings();
+  }, [loadOperatorSettings]);
+
+  /*
+   * ============================================================
+   * DATABASE BOOKINGS
+   * ============================================================
+   *
+   * BOOKING is the source of truth for catering capacity.
+   *
+   * BOOKING does not have an OrderType column.
+   * Therefore, BOOKING records are treated as catering bookings.
+   */
+
+  const [databaseBookings, setDatabaseBookings] = useState<Booking[]>(
+    []
+  );
+
+  const [loadingAvailability, setLoadingAvailability] =
+    useState(false);
+
+  const loadDatabaseBookings = async () => {
+    setLoadingAvailability(true);
+
+    const { data, error } = await supabase
+      .from('BOOKING')
+      .select(
+        `
+        BookingID,
+        CustomerID,
+        OperatorID,
+        EventDate,
+        EventTime,
+        Venue,
+        GuestCount,
+        Status
+        `
+      )
+      .eq('OperatorID', 2);
+
+    if (error) {
+      console.error(
+        'BOOKING AVAILABILITY FETCH ERROR:',
+        error
+      );
+
+      setDatabaseBookings([]);
+      setLoadingAvailability(false);
+
+      return;
+    }
+
+    type DatabaseBooking = {
+      BookingID: number;
+      CustomerID: number | null;
+      OperatorID: number | null;
+      EventDate: string;
+      EventTime: string;
+      Venue: string | null;
+      GuestCount: number | null;
+      Status: string | null;
+    };
+
+    const formattedBookings: Booking[] = (
+      (data ?? []) as DatabaseBooking[]
+    ).map((booking): Booking => ({
+      id: String(booking.BookingID),
+
+      customerId: String(
+        booking.CustomerID ?? ''
+      ),
+
+      customerName: '',
+
+      customerEmail: '',
+
+      orderType: 'catering',
+
+      eventDate: String(
+        booking.EventDate ?? ''
+      ),
+
+      eventTime: String(
+        booking.EventTime ?? ''
+      ),
+
+      eventType: '',
+
+      venue: String(
+        booking.Venue ?? ''
+      ),
+
+      guestCount: Number(
+        booking.GuestCount ?? 0
+      ),
+
+      status:
+        booking.Status === 'confirmed'
+          ? 'confirmed'
+          : booking.Status === 'rejected'
+            ? 'rejected'
+            : booking.Status === 'completed'
+              ? 'completed'
+              : 'pending',
+
+      selectedMenuItemIds: [],
+
+      dietaryRestrictions: [],
+
+      eventProfileId: '',
+
+      totalCost: 0,
+
+      paymentsReceived: 0,
+
+      createdAt: '',
+
+      specialRequests: '',
+
+      validationPassed: true,
+
+      ruleViolations: [],
+    }));
+
+    setDatabaseBookings(formattedBookings);
+
+    setLoadingAvailability(false);
+  };
+
+  /*
+   * Load current database bookings when the page opens.
+   */
+
+  useEffect(() => {
+    loadDatabaseBookings();
+  }, []);
+
+  /*
+   * ============================================================
+   * FORM STATE
+   * ============================================================
+   */
 
   const [cateringForm, setCateringForm] = useState({
     eventType: '',
@@ -66,50 +235,45 @@ export default function InquiryPage() {
     specialRequests: '',
   });
 
-  const [allergenOptions, setAllergenOptions] = useState<AllergenType[]>(
-    FALLBACK_ALLERGEN_OPTIONS
+  const [dietary, setDietary] = useState<AllergenType[]>(
+    []
   );
 
-  const [allergyTagRows, setAllergyTagRows] = useState<AllergyTagRow[]>([]);
-
-  const [dietary, setDietary] = useState<AllergenType[]>([]);
-
-  const [loadingAllergies, setLoadingAllergies] = useState(true);
-  const [savingAllergies, setSavingAllergies] = useState(false);
+  const [guestCountError, setGuestCountError] =
+    useState('');
 
   /*
-   * Load the available allergy tags and the customer's
-   * previously saved allergies from Supabase.
+   * ============================================================
+   * ACTIVE DATE
+   * ============================================================
    */
-  useEffect(() => {
-    async function loadCustomerAllergies() {
-      if (!currentUser?.id) {
-        setLoadingAllergies(false);
-        return;
-      }
 
-      try {
-        setLoadingAllergies(true);
+  const activeDate = isMealPrep
+    ? mealPrepForm.startDate
+    : cateringForm.eventDate;
 
-        // Load available allergy tags from the database.
-        const {
-          data: tags,
-          error: tagsError,
-        } = await supabase
-          .from('ALLERGY_TAG')
-          .select('AllergyTagID, AllergenName')
-          .order('AllergyTagID');
+  /*
+   * ============================================================
+   * BOOKINGS USED FOR AVAILABILITY
+   * ============================================================
+   *
+   * Catering:
+   *   Uses real Supabase BOOKING records.
+   *
+   * Meal prep:
+   *   Uses existing application booking data because
+   *   MEAL_PREP_ORDER currently has no fulfillment date.
+   */
 
-        if (tagsError) {
-          console.error('Failed to load allergy tags:', tagsError);
-        } else if (tags) {
-          const validTags = tags.filter((tag) =>
-            FALLBACK_ALLERGEN_OPTIONS.includes(
-              tag.AllergenName as AllergenType
-            )
-          ) as AllergyTagRow[];
+  const availabilityBookings = isMealPrep
+    ? bookings
+    : databaseBookings;
 
-          setAllergyTagRows(validTags);
+  /*
+   * ============================================================
+   * DATE AVAILABILITY
+   * ============================================================
+   */
 
           if (validTags.length > 0) {
             setAllergenOptions(
@@ -164,14 +328,100 @@ export default function InquiryPage() {
       }
     }
 
-    loadCustomerAllergies();
-  }, [currentUser?.id, setDietaryRestrictions]);
+    return getDateAvailability(
+      activeDate,
+      customerOrderType,
+      operatorSettings,
+      availabilityBookings
+    );
+  }, [
+    activeDate,
+    customerOrderType,
+    operatorSettings,
+    availabilityBookings,
+  ]);
+
+  /*
+   * ============================================================
+   * SUGGESTED DATE
+   * ============================================================
+   */
+
+  const suggestedDate = useMemo(() => {
+    if (
+      !activeDate ||
+      !dateAvailability ||
+      dateAvailability.available
+    ) {
+      return null;
+    }
+
+    /*
+     * IMPORTANT:
+     * findNextAvailableDate currently accepts only
+     * four arguments.
+     */
+
+    return findNextAvailableDate(
+      activeDate,
+      customerOrderType,
+      operatorSettings,
+      availabilityBookings
+    );
+  }, [
+    activeDate,
+    dateAvailability,
+    customerOrderType,
+    operatorSettings,
+    availabilityBookings,
+  ]);
+
+  /*
+   * ============================================================
+   * APPLY SUGGESTED DATE
+   * ============================================================
+   */
+
+  const applySuggestedDate = () => {
+    if (!suggestedDate) {
+      return;
+    }
+
+    if (isMealPrep) {
+      setMealPrepForm((prev) => ({
+        ...prev,
+        startDate: suggestedDate,
+      }));
+    } else {
+      setCateringForm((prev) => ({
+        ...prev,
+        eventDate: suggestedDate,
+      }));
+    }
+
+    setGuestCountError('');
+  };
+
+  /*
+   * ============================================================
+   * ORDER TYPE
+   * ============================================================
+   */
 
   const switchOrderType = (type: OrderType) => {
     setCustomerOrderType(type);
+    setGuestCountError('');
   };
 
-  const toggleAllergen = (allergen: AllergenType) => {
+  /*
+   * ============================================================
+   * ALLERGENS
+   * ============================================================
+   */
+
+  const toggleAllergen = (
+    allergen: AllergenType
+  ) => {
     setDietary((prev) =>
       prev.includes(allergen)
         ? prev.filter((a) => a !== allergen)
@@ -180,12 +430,10 @@ export default function InquiryPage() {
   };
 
   /*
-   * Save the customer's allergy selections to CUSTOMER_ALLERGY.
+   * ============================================================
+   * SUBMIT
+   * ============================================================
    */
-  const saveCustomerAllergies = async () => {
-    if (!currentUser?.id) {
-      throw new Error('No customer is currently logged in.');
-    }
 
     // Convert allergen names into AllergyTagIDs, preserving the existing
     // delete-then-insert behavior in the server action.
@@ -202,102 +450,205 @@ export default function InquiryPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!currentUser?.id) {
-      alert('Please log in as a customer before continuing.');
+    /*
+     * Do not allow submission if the selected date
+     * is unavailable.
+     */
+
+    if (
+      dateAvailability &&
+      !dateAvailability.available
+    ) {
       return;
     }
 
-    try {
-      setSavingAllergies(true);
+    /*
+     * Guest count validation.
+     */
 
-      // Save allergies to Supabase.
-      await saveCustomerAllergies();
+    if (!isMealPrep && cateringForm.guestCount) {
+      const guestCount = Number(
+        cateringForm.guestCount
+      );
 
-      // Keep Zustand updated for the current session.
-      setDietaryRestrictions(dietary);
+      const maxGuests =
+        operatorSettings.maxGuestsPerEvent;
 
-      if (isMealPrep) {
-        setCustomerBookingDraft({
-          orderType: 'meal_prep',
-          eventType: mealPrepForm.planName,
-          eventDate: mealPrepForm.startDate,
-          eventTime: mealPrepForm.fulfillmentTime,
-          venue:
-            mealPrepForm.fulfillmentMethod === 'delivery'
-              ? mealPrepForm.address
-              : 'Pickup at kitchen',
-          guestCount:
-            parseInt(mealPrepForm.servingsPerCycle, 10) || 1,
-          mealPrepFrequency: mealPrepForm.frequency,
-          fulfillmentMethod: mealPrepForm.fulfillmentMethod,
-          specialRequests: mealPrepForm.specialRequests,
-        });
-      } else {
-        setCustomerBookingDraft({
-          orderType: 'catering',
-          eventType: cateringForm.eventType,
-          eventDate: cateringForm.eventDate,
-          eventTime: cateringForm.eventTime,
-          venue: cateringForm.venue,
-          guestCount:
-            parseInt(cateringForm.guestCount, 10) || 1,
-          specialRequests: cateringForm.specialRequests,
-        });
+      if (guestCount > maxGuests) {
+        setGuestCountError(
+          `Guest count (${guestCount}) exceeds the maximum allowed guests per event (${maxGuests}).`
+        );
+
+        return;
       }
 
-      console.log('Customer allergies saved:', dietary);
+      setGuestCountError('');
+    }
 
-      console.log('CATERING FORM:', cateringForm);
-      console.log('MEAL PREP FORM:', mealPrepForm);
+    setDietaryRestrictions(dietary);
 
-      console.log(
-        'DATE BEING SAVED:',
-        isMealPrep
-          ? mealPrepForm.startDate
-          : cateringForm.eventDate
-      );
+    /*
+     * ==========================================================
+     * MEAL PREP
+     * ==========================================================
+     */
 
-      console.log('Booking draft before Browse:', {
-        orderType: isMealPrep ? 'meal_prep' : 'catering',
-        eventDate: isMealPrep
-          ? mealPrepForm.startDate
-          : cateringForm.eventDate,
-        eventTime: isMealPrep
-          ? mealPrepForm.fulfillmentTime
-          : cateringForm.eventTime,
-        venue: isMealPrep
-          ? mealPrepForm.fulfillmentMethod === 'delivery'
+    if (isMealPrep) {
+      setCustomerBookingDraft({
+        orderType: 'meal_prep',
+
+        eventType:
+          mealPrepForm.planName,
+
+        eventDate:
+          mealPrepForm.startDate,
+
+        eventTime:
+          mealPrepForm.fulfillmentTime,
+
+        venue:
+          mealPrepForm.fulfillmentMethod ===
+          'delivery'
             ? mealPrepForm.address
-            : 'Pickup at kitchen'
-          : cateringForm.venue,
-        guestCount: isMealPrep
-          ? mealPrepForm.servingsPerCycle
-          : cateringForm.guestCount,
+            : 'Pickup at kitchen',
+
+        guestCount:
+          parseInt(
+            mealPrepForm.servingsPerCycle,
+            10
+          ) || 1,
+
+        mealPrepFrequency:
+          mealPrepForm.frequency,
+
+        fulfillmentMethod:
+          mealPrepForm.fulfillmentMethod,
+
+        specialRequests:
+          mealPrepForm.specialRequests,
       });
 
-      router.push('/customer/browse');
-    } catch (error) {
-      console.error('Failed to save customer allergies:', error);
-
-      alert(
-        error instanceof Error
-          ? error.message
-          : 'Could not save your dietary restrictions.'
+      router.push(
+        '/customer/meal-prep-preview'
       );
-    } finally {
-      setSavingAllergies(false);
+
+      return;
     }
+
+    /*
+     * ==========================================================
+     * CATERING
+     * ==========================================================
+     */
+
+    setCustomerBookingDraft({
+      orderType: 'catering',
+
+      eventType:
+        cateringForm.eventType,
+
+      eventDate:
+        cateringForm.eventDate,
+
+      eventTime:
+        cateringForm.eventTime,
+
+      venue:
+        cateringForm.venue,
+
+      guestCount:
+        parseInt(
+          cateringForm.guestCount,
+          10
+        ) || 1,
+
+      specialRequests:
+        cateringForm.specialRequests,
+    });
+
+    router.push(
+      '/customer/browse'
+    );
   };
+
+  /*
+   * ============================================================
+   * INPUT STYLE
+   * ============================================================
+   */
 
   const inputClass =
     'w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent';
 
+  /*
+   * ============================================================
+   * AVAILABILITY BANNER
+   * ============================================================
+   */
+
+  const availabilityBanner =
+    dateAvailability &&
+    !dateAvailability.available && (
+      <div className="flex flex-col gap-2 rounded-lg border border-yellow-300 bg-yellow-50 p-4">
+        <div className="flex gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-700" />
+
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-yellow-900">
+              This date is not available.
+            </p>
+
+            <p className="text-sm text-yellow-800">
+              {dateAvailability.reason ??
+                'The operator cannot accept bookings for this date.'}
+            </p>
+          </div>
+        </div>
+
+        {suggestedDate && (
+          <div className="flex items-center justify-between gap-3 rounded-md bg-white/60 px-3 py-2">
+            <p className="flex items-center gap-2 text-sm text-yellow-900">
+              <Sparkles className="h-4 w-4" />
+
+              Nearest open date:
+
+              <span className="font-semibold">
+                {formatDateLabel(
+                  suggestedDate
+                )}
+              </span>
+            </p>
+
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={applySuggestedDate}
+            >
+              Use this date
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+
+  /*
+   * ============================================================
+   * PAGE
+   * ============================================================
+   */
+
   return (
-    <DashboardLayout>
+    <CustomerShell>
       <div className="max-w-3xl mx-auto space-y-8">
+
+        {/* PAGE HEADER */}
+
         <div>
           <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-            {isMealPrep ? 'Start Meal Prep Plan' : 'Book Catering'}
+            {isMealPrep
+              ? 'Start Meal Prep Plan'
+              : 'Book Catering'}
           </h1>
 
           <p className="text-surface-muted-foreground mt-2">
@@ -307,10 +658,15 @@ export default function InquiryPage() {
           </p>
         </div>
 
+        {/* ORDER TYPE */}
+
         <div className="grid grid-cols-2 gap-4">
+
           <button
             type="button"
-            onClick={() => switchOrderType('catering')}
+            onClick={() =>
+              switchOrderType('catering')
+            }
             className={`p-4 rounded-xl border-2 text-left transition-all ${
               !isMealPrep
                 ? 'border-primary bg-primary/10'
@@ -330,7 +686,9 @@ export default function InquiryPage() {
 
           <button
             type="button"
-            onClick={() => switchOrderType('meal_prep')}
+            onClick={() =>
+              switchOrderType('meal_prep')
+            }
             className={`p-4 rounded-xl border-2 text-left transition-all ${
               isMealPrep
                 ? 'border-primary bg-primary/10'
@@ -347,15 +705,29 @@ export default function InquiryPage() {
               Recurring weekly or bi-weekly meals
             </p>
           </button>
+
         </div>
 
+        {/* FORM */}
+
         <Card className="p-8">
-          <form onSubmit={handleSubmit} className="space-y-8">
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-8"
+          >
+
+            {/* ================================================= */}
+            {/* CATERING */}
+            {/* ================================================= */}
+
             {!isMealPrep ? (
               <div className="space-y-6">
+
                 <h2 className="text-lg font-bold text-card-foreground">
                   Event Details
                 </h2>
+
+                {/* EVENT TYPE */}
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
@@ -365,11 +737,14 @@ export default function InquiryPage() {
                   <input
                     type="text"
                     placeholder="Wedding, Corporate Lunch, Birthday Party, etc."
-                    value={cateringForm.eventType}
+                    value={
+                      cateringForm.eventType
+                    }
                     onChange={(e) =>
                       setCateringForm({
                         ...cateringForm,
-                        eventType: e.target.value,
+                        eventType:
+                          e.target.value,
                       })
                     }
                     required
@@ -377,7 +752,12 @@ export default function InquiryPage() {
                   />
                 </div>
 
+                {/* DATE / TIME / GUESTS */}
+
                 <div className="grid md:grid-cols-3 gap-6">
+
+                  {/* DATE */}
+
                   <div>
                     <label className="block text-sm font-medium text-card-foreground mb-2">
                       Event Date *
@@ -385,17 +765,22 @@ export default function InquiryPage() {
 
                     <input
                       type="date"
-                      value={cateringForm.eventDate}
+                      value={
+                        cateringForm.eventDate
+                      }
                       onChange={(e) =>
                         setCateringForm({
                           ...cateringForm,
-                          eventDate: e.target.value,
+                          eventDate:
+                            e.target.value,
                         })
                       }
                       required
                       className={inputClass}
                     />
                   </div>
+
+                  {/* TIME */}
 
                   <div>
                     <label className="block text-sm font-medium text-card-foreground mb-2">
@@ -404,17 +789,22 @@ export default function InquiryPage() {
 
                     <input
                       type="time"
-                      value={cateringForm.eventTime}
+                      value={
+                        cateringForm.eventTime
+                      }
                       onChange={(e) =>
                         setCateringForm({
                           ...cateringForm,
-                          eventTime: e.target.value,
+                          eventTime:
+                            e.target.value,
                         })
                       }
                       required
                       className={inputClass}
                     />
                   </div>
+
+                  {/* GUEST COUNT */}
 
                   <div>
                     <label className="block text-sm font-medium text-card-foreground mb-2">
@@ -424,6 +814,7 @@ export default function InquiryPage() {
                     <input
                       type="number"
                       min="1"
+                      max={operatorSettings.maxGuestsPerEvent}
                       value={cateringForm.guestCount}
                       onChange={(e) =>
                         setCateringForm({
@@ -434,8 +825,32 @@ export default function InquiryPage() {
                       required
                       className={inputClass}
                     />
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Maximum: {operatorSettings.maxGuestsPerEvent} guests
+                    </p>
+
+                    {guestCountError && (
+                      <p className="mt-1 text-xs text-red-600">
+                        {guestCountError}
+                      </p>
+                    )}
                   </div>
+
                 </div>
+
+                {/* AVAILABILITY */}
+
+                {loadingAvailability &&
+                  cateringForm.eventDate && (
+                    <p className="text-sm text-muted-foreground">
+                      Checking booking availability...
+                    </p>
+                  )}
+
+                {availabilityBanner}
+
+                {/* VENUE */}
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
@@ -445,11 +860,14 @@ export default function InquiryPage() {
                   <input
                     type="text"
                     placeholder="Location of your event"
-                    value={cateringForm.venue}
+                    value={
+                      cateringForm.venue
+                    }
                     onChange={(e) =>
                       setCateringForm({
                         ...cateringForm,
-                        venue: e.target.value,
+                        venue:
+                          e.target.value,
                       })
                     }
                     required
@@ -457,34 +875,50 @@ export default function InquiryPage() {
                   />
                 </div>
 
+                {/* SPECIAL REQUESTS */}
+
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
                     Special Requests
                   </label>
 
                   <textarea
-                    value={cateringForm.specialRequests}
+                    value={
+                      cateringForm.specialRequests
+                    }
                     onChange={(e) =>
                       setCateringForm({
                         ...cateringForm,
-                        specialRequests: e.target.value,
+                        specialRequests:
+                          e.target.value,
                       })
                     }
                     rows={4}
                     className={inputClass}
                   />
                 </div>
+
               </div>
             ) : (
+
+              /* ================================================= */
+              /* MEAL PREP */
+              /* ================================================= */
+
               <div className="space-y-6">
+
                 <h2 className="text-lg font-bold text-card-foreground">
                   Meal Prep Plan
                 </h2>
 
                 <p className="text-sm text-muted-foreground">
-                  Your plan repeats on a schedule. The operator validates
-                  fulfillment day capacity separately from catering events.
+                  Your plan repeats on a schedule.
+                  The operator validates fulfillment
+                  day capacity separately from catering
+                  events.
                 </p>
+
+                {/* PLAN NAME */}
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
@@ -494,11 +928,14 @@ export default function InquiryPage() {
                   <input
                     type="text"
                     placeholder="e.g. Weekly Fitness Meals, Family Lunch Prep"
-                    value={mealPrepForm.planName}
+                    value={
+                      mealPrepForm.planName
+                    }
                     onChange={(e) =>
                       setMealPrepForm({
                         ...mealPrepForm,
-                        planName: e.target.value,
+                        planName:
+                          e.target.value,
                       })
                     }
                     required
@@ -506,7 +943,10 @@ export default function InquiryPage() {
                   />
                 </div>
 
+                {/* DATE / TIME */}
+
                 <div className="grid md:grid-cols-2 gap-6">
+
                   <div>
                     <label className="block text-sm font-medium text-card-foreground mb-2">
                       First Fulfillment Date *
@@ -514,11 +954,14 @@ export default function InquiryPage() {
 
                     <input
                       type="date"
-                      value={mealPrepForm.startDate}
+                      value={
+                        mealPrepForm.startDate
+                      }
                       onChange={(e) =>
                         setMealPrepForm({
                           ...mealPrepForm,
-                          startDate: e.target.value,
+                          startDate:
+                            e.target.value,
                         })
                       }
                       required
@@ -533,37 +976,56 @@ export default function InquiryPage() {
 
                     <input
                       type="time"
-                      value={mealPrepForm.fulfillmentTime}
+                      value={
+                        mealPrepForm.fulfillmentTime
+                      }
                       onChange={(e) =>
                         setMealPrepForm({
                           ...mealPrepForm,
-                          fulfillmentTime: e.target.value,
+                          fulfillmentTime:
+                            e.target.value,
                         })
                       }
                       required
                       className={inputClass}
                     />
                   </div>
+
                 </div>
 
+                {/* AVAILABILITY */}
+
+                {availabilityBanner}
+
+                {/* FREQUENCY / SERVINGS */}
+
                 <div className="grid md:grid-cols-2 gap-6">
+
                   <div>
                     <label className="block text-sm font-medium text-card-foreground mb-2">
                       Frequency *
                     </label>
 
                     <select
-                      value={mealPrepForm.frequency}
+                      value={
+                        mealPrepForm.frequency
+                      }
                       onChange={(e) =>
                         setMealPrepForm({
                           ...mealPrepForm,
-                          frequency: e.target.value as MealPrepFrequency,
+                          frequency:
+                            e.target.value as MealPrepFrequency,
                         })
                       }
                       className={inputClass}
                     >
-                      <option value="weekly">Weekly</option>
-                      <option value="biweekly">Every 2 weeks</option>
+                      <option value="weekly">
+                        Weekly
+                      </option>
+
+                      <option value="biweekly">
+                        Every 2 weeks
+                      </option>
                     </select>
                   </div>
 
@@ -576,18 +1038,24 @@ export default function InquiryPage() {
                       type="number"
                       min="1"
                       placeholder="Meals per fulfillment"
-                      value={mealPrepForm.servingsPerCycle}
+                      value={
+                        mealPrepForm.servingsPerCycle
+                      }
                       onChange={(e) =>
                         setMealPrepForm({
                           ...mealPrepForm,
-                          servingsPerCycle: e.target.value,
+                          servingsPerCycle:
+                            e.target.value,
                         })
                       }
                       required
                       className={inputClass}
                     />
                   </div>
+
                 </div>
+
+                {/* FULFILLMENT METHOD */}
 
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
@@ -595,34 +1063,46 @@ export default function InquiryPage() {
                   </label>
 
                   <div className="flex gap-4">
-                    {(['pickup', 'delivery'] as FulfillmentMethod[]).map(
-                      (method) => (
-                        <label
-                          key={method}
-                          className="flex items-center gap-2 cursor-pointer text-sm text-card-foreground"
-                        >
-                          <input
-                            type="radio"
-                            name="fulfillmentMethod"
-                            checked={
-                              mealPrepForm.fulfillmentMethod === method
-                            }
-                            onChange={() =>
-                              setMealPrepForm({
-                                ...mealPrepForm,
-                                fulfillmentMethod: method,
-                              })
-                            }
-                          />
 
-                          <span className="capitalize">{method}</span>
-                        </label>
-                      )
-                    )}
+                    {(
+                      [
+                        'pickup',
+                        'delivery',
+                      ] as FulfillmentMethod[]
+                    ).map((method) => (
+                      <label
+                        key={method}
+                        className="flex items-center gap-2 cursor-pointer text-sm text-card-foreground"
+                      >
+                        <input
+                          type="radio"
+                          name="fulfillmentMethod"
+                          checked={
+                            mealPrepForm.fulfillmentMethod ===
+                            method
+                          }
+                          onChange={() =>
+                            setMealPrepForm({
+                              ...mealPrepForm,
+                              fulfillmentMethod:
+                                method,
+                            })
+                          }
+                        />
+
+                        <span className="capitalize">
+                          {method}
+                        </span>
+                      </label>
+                    ))}
+
                   </div>
                 </div>
 
-                {mealPrepForm.fulfillmentMethod === 'delivery' && (
+                {/* DELIVERY ADDRESS */}
+
+                {mealPrepForm.fulfillmentMethod ===
+                  'delivery' && (
                   <div>
                     <label className="block text-sm font-medium text-card-foreground mb-2">
                       Delivery Address *
@@ -631,11 +1111,14 @@ export default function InquiryPage() {
                     <input
                       type="text"
                       placeholder="Street, city, delivery notes"
-                      value={mealPrepForm.address}
+                      value={
+                        mealPrepForm.address
+                      }
                       onChange={(e) =>
                         setMealPrepForm({
                           ...mealPrepForm,
-                          address: e.target.value,
+                          address:
+                            e.target.value,
                         })
                       }
                       required
@@ -644,89 +1127,115 @@ export default function InquiryPage() {
                   </div>
                 )}
 
+                {/* SPECIAL REQUESTS */}
+
                 <div>
                   <label className="block text-sm font-medium text-card-foreground mb-2">
                     Special Requests
                   </label>
 
                   <textarea
-                    value={mealPrepForm.specialRequests}
+                    value={
+                      mealPrepForm.specialRequests
+                    }
                     onChange={(e) =>
                       setMealPrepForm({
                         ...mealPrepForm,
-                        specialRequests: e.target.value,
+                        specialRequests:
+                          e.target.value,
                       })
                     }
                     rows={3}
                     className={inputClass}
                   />
                 </div>
+
               </div>
             )}
 
-            {/* CUSTOMER ALLERGIES */}
+            {/* ================================================= */}
+            {/* DIETARY RESTRICTIONS */}
+            {/* ================================================= */}
+
             <div className="space-y-6 pt-6 border-t border-border">
-              <div>
-                <h2 className="text-lg font-bold text-card-foreground">
-                  Dietary Restrictions
-                </h2>
 
-                <p className="text-sm text-muted-foreground mt-1">
-                  Select any allergens you need to avoid. Your selections
-                  will be saved to your customer profile.
-                </p>
-              </div>
+              <h2 className="text-lg font-bold text-card-foreground">
+                Dietary Restrictions
+              </h2>
 
-              {loadingAllergies ? (
-                <p className="text-sm text-muted-foreground">
-                  Loading your dietary restrictions...
-                </p>
-              ) : (
-                <div className="grid md:grid-cols-2 gap-4">
-                  {allergenOptions.map((allergen) => (
+              <div className="grid md:grid-cols-2 gap-4">
+
+                {ALLERGEN_OPTIONS.map(
+                  (allergen) => (
                     <label
                       key={allergen}
                       className="flex items-center gap-3 cursor-pointer"
                     >
                       <input
                         type="checkbox"
-                        checked={dietary.includes(allergen)}
-                        onChange={() => toggleAllergen(allergen)}
+                        checked={dietary.includes(
+                          allergen
+                        )}
+                        onChange={() =>
+                          toggleAllergen(
+                            allergen
+                          )
+                        }
                         className="w-4 h-4 border-border rounded"
                       />
 
                       <span className="text-sm text-card-foreground capitalize">
-                        {allergen.replace('_', ' ')}
+                        {allergen.replace(
+                          '_',
+                          ' '
+                        )}
                       </span>
                     </label>
-                  ))}
-                </div>
-              )}
+                  )
+                )}
+
+              </div>
             </div>
 
+            {/* ================================================= */}
+            {/* BUTTONS */}
+            {/* ================================================= */}
+
             <div className="flex gap-4 pt-6 border-t border-border">
+
               <Button
                 type="submit"
-                disabled={savingAllergies || loadingAllergies}
-                className="flex-1 bg-primary text-white font-medium hover:bg-brand"
+                disabled={
+                  Boolean(
+                    dateAvailability &&
+                      !dateAvailability.available
+                  ) ||
+                  loadingAvailability ||
+                  Boolean(
+                    guestCountError
+                  )
+                }
+                className="flex-1 bg-primary text-white font-medium hover:bg-brand disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {savingAllergies
-                  ? 'Saving...'
-                  : 'Continue to Menu Selection'}
+                Continue to Menu Selection
               </Button>
 
               <Button
                 type="button"
                 variant="outline"
                 className="flex-1"
-                onClick={() => router.back()}
+                onClick={() =>
+                  router.back()
+                }
               >
                 Cancel
               </Button>
+
             </div>
+
           </form>
         </Card>
       </div>
-    </DashboardLayout>
+    </CustomerShell>
   );
 }
