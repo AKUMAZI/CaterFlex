@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+type BookingSection = 'all' | 'catering' | 'meal_prep';
+
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { getCustomersByIds } from '@/app/actions/auth';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +19,8 @@ import {
   Clock3,
   CheckCircle2,
   XCircle,
+  Utensils,
+  PackageCheck,
 } from 'lucide-react';
 
 type Booking = {
@@ -25,10 +29,20 @@ type Booking = {
   OperatorID: number | null;
   EventDate: string;
   EventTime: string;
+  OrderType: 'catering' | 'meal_prep' | null;
   Venue: string | null;
   GuestCount: number;
   Status: string | null;
   AllergenConflictFlag: boolean | null;
+};
+
+type MealPrepOrder = {
+  MealPrepOrderID: number;
+  CustomerID: number | null;
+  OperatorID: number | null;
+  RecurrencePattern: string | null;
+  MealsPerCycle: number | null;
+  Status: string | null;
 };
 
 type Customer = {
@@ -98,6 +112,8 @@ export default function BookingsPage() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [activeSection, setActiveSection] = useState<BookingSection>('all');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // ============================================================
   // LOAD BOOKINGS
@@ -105,6 +121,7 @@ export default function BookingsPage() {
 
   const loadBookings = async () => {
     setLoading(true);
+    setLoadError(null);
 
     try {
       const bookingResult = await getOwnerBookings();
@@ -123,17 +140,16 @@ export default function BookingsPage() {
         return;
       }
 
-      const bookingIds = bookingData.map(
+      const bookingIds = (bookingData ?? []).map(
         (booking) => booking.BookingID
       );
 
       const customerIds = Array.from(
         new Set(
-          bookingData
-            .map((booking) => booking.CustomerID)
-            .filter(
-              (id): id is number => id !== null
-            )
+          [
+            ...(bookingData ?? []).map((booking) => booking.CustomerID),
+            ...mealPrepOrders.map((order) => order.CustomerID),
+          ].filter((id): id is number => id !== null)
         )
       );
 
@@ -198,7 +214,7 @@ export default function BookingsPage() {
       // ============================================================
 
       const combinedBookings: BookingDisplay[] =
-        bookingData.map((booking) => {
+        (bookingData ?? []).map((booking) => {
           const customer =
             customers.find(
               (item) =>
@@ -236,12 +252,27 @@ export default function BookingsPage() {
 
           return {
             ...booking,
+            OrderType: 'catering' as const,
             customer,
             items,
           };
         });
 
-      setBookings(combinedBookings);
+      const mealPrepBookings: BookingDisplay[] = mealPrepOrders.map((order) => ({
+        BookingID: -order.MealPrepOrderID,
+        CustomerID: order.CustomerID,
+        OperatorID: order.OperatorID,
+        EventDate: '',
+        EventTime: order.RecurrencePattern ?? 'Recurring',
+        OrderType: 'meal_prep',
+        Venue: 'Meal prep subscription',
+        GuestCount: order.MealsPerCycle ?? 0,
+        Status: order.Status,
+        customer: customers.find((customer) => customer.CustomerID === order.CustomerID) ?? null,
+        items: [],
+      }));
+
+      setBookings([...combinedBookings, ...mealPrepBookings]);
     } catch (error) {
       console.error(
         'Unexpected booking fetch error:',
@@ -311,6 +342,27 @@ export default function BookingsPage() {
     }
   };
 
+  const bookingSections = [
+    {
+      key: 'catering' as const,
+      label: 'Catering Events',
+      description: 'Full-service catering requests and event bookings',
+      icon: Utensils,
+      bookings: bookings.filter((booking) => booking.OrderType !== 'meal_prep'),
+    },
+    {
+      key: 'meal_prep' as const,
+      label: 'Meal Prep Orders',
+      description: 'Recurring meal prep orders and fulfillment requests',
+      icon: PackageCheck,
+      bookings: bookings.filter((booking) => booking.OrderType === 'meal_prep'),
+    },
+  ];
+
+  const visibleSections = activeSection === 'all'
+    ? bookingSections
+    : bookingSections.filter((section) => section.key === activeSection);
+
   // ============================================================
   // PAGE
   // ============================================================
@@ -331,6 +383,28 @@ export default function BookingsPage() {
           </p>
         </div>
 
+        <div className="flex flex-wrap gap-3" role="tablist" aria-label="Booking type">
+          {[
+            { key: 'all' as const, label: 'All bookings', count: bookings.length },
+            { key: 'catering' as const, label: 'Catering events', count: bookingSections[0].bookings.length },
+            { key: 'meal_prep' as const, label: 'Meal prep orders', count: bookingSections[1].bookings.length },
+          ].map((tab) => (
+            <Button
+              key={tab.key}
+              type="button"
+              variant={activeSection === tab.key ? 'default' : 'outline'}
+              onClick={() => setActiveSection(tab.key)}
+              role="tab"
+              aria-selected={activeSection === tab.key}
+              className="gap-2"
+            >
+              {tab.key === 'meal_prep' ? <PackageCheck className="h-4 w-4" /> : <Utensils className="h-4 w-4" />}
+              {tab.label}
+              <span className="rounded-full bg-background/30 px-2 py-0.5 text-xs">{tab.count}</span>
+            </Button>
+          ))}
+        </div>
+
         {/* LOADING */}
 
         {loading ? (
@@ -338,6 +412,12 @@ export default function BookingsPage() {
             <p className="text-muted-foreground">
               Loading bookings...
             </p>
+          </Card>
+
+        ) : loadError ? (
+          <Card className="p-12 text-center">
+            <p className="font-medium text-destructive">Unable to load bookings</p>
+            <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
           </Card>
 
         ) : bookings.length === 0 ? (
@@ -354,9 +434,34 @@ export default function BookingsPage() {
 
           /* BOOKINGS */
 
-          <div className="space-y-4">
+          <div className="space-y-8">
+            {visibleSections.map((section) => {
+              const SectionIcon = section.icon;
 
-            {bookings.map((booking) => {
+              return (
+                <section key={section.key} aria-labelledby={`${section.key}-heading`}>
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <SectionIcon className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h2 id={`${section.key}-heading`} className="font-heading text-xl font-semibold text-surface-foreground">
+                        {section.label}
+                      </h2>
+                      <p className="text-sm text-muted-foreground">{section.description}</p>
+                    </div>
+                    <span className="ml-auto rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground">
+                      {section.bookings.length}
+                    </span>
+                  </div>
+
+                  {section.bookings.length === 0 ? (
+                    <Card className="p-6 text-center">
+                      <p className="text-sm text-muted-foreground">No {section.key === 'meal_prep' ? 'meal prep orders' : 'catering events'} yet.</p>
+                    </Card>
+                  ) : (
+                    <div className="space-y-4">
+                      {section.bookings.map((booking) => {
               const statusKey =
                 booking.Status?.toLowerCase() ??
                 'pending';
@@ -409,11 +514,10 @@ export default function BookingsPage() {
                         </p>
 
                         <p className="text-sm text-muted-foreground">
-                          Catering order #
-                          {booking.BookingID}
+                          {booking.OrderType === 'meal_prep' ? 'Meal prep order' : 'Catering event'} #{Math.abs(booking.BookingID)}
                           {' • '}
                           {booking.GuestCount}
-                          {' guests • '}
+                          {booking.OrderType === 'meal_prep' ? ' servings • ' : ' guests • '}
                           {booking.EventTime}
                         </p>
                       </div>
@@ -421,9 +525,9 @@ export default function BookingsPage() {
                       <div className="ml-auto text-right">
 
                         <p className="text-sm text-muted-foreground">
-                          {new Date(
-                            `${booking.EventDate}T00:00:00`
-                          ).toLocaleDateString()}
+                          {booking.EventDate
+                            ? new Date(`${booking.EventDate}T00:00:00`).toLocaleDateString()
+                            : 'Recurring order'}
                         </p>
 
                           <div className="mt-1 flex items-center justify-end gap-2 flex-wrap">
@@ -666,8 +770,12 @@ export default function BookingsPage() {
 
                 </Card>
               );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
             })}
-
           </div>
         )}
 

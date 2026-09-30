@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAppState } from '@/lib/state';
 import {
   LayoutDashboard,
@@ -18,13 +19,17 @@ import {
 } from 'lucide-react';
 
 export function Sidebar() {
+  const pathname = usePathname();
   const { currentRole } = useAppState();
+  const isOwnerRoute = pathname === '/owner' || pathname.startsWith('/owner/') || pathname === '/menu-management' || pathname.startsWith('/menu-management/') || pathname === '/macroflex' || pathname.startsWith('/macroflex/');
+  const isCustomerRoute = pathname === '/customer' || pathname.startsWith('/customer/');
 
   const ownerLinks = [
     { href: '/owner/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/owner/bookings', label: 'Bookings', icon: ClipboardList },
     { href: '/owner/calendar', label: 'Calendar', icon: Calendar },
-    { href: '/owner/menu', label: 'Menu Management', icon: UtensilsCrossed },
+    { href: '/menu-management', label: 'Menu Management', icon: UtensilsCrossed },
+    { href: '/macroflex', label: 'MacroFlex', icon: Activity },
     { href: '/owner/inventory', label: 'Inventory', icon: Package },
     { href: '/owner/prep-schedule', label: 'Prep Schedule', icon: Clock },
     { href: '/owner/payments', label: 'Payments', icon: DollarSign },

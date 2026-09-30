@@ -35,7 +35,6 @@ interface MenuItemFormProps {
   open: boolean;
   item: MenuItem | null;
   onClose: () => void;
-  onSaved?: () => void;
 }
 
 interface DbIngredient {
@@ -95,7 +94,6 @@ export function MenuItemForm({
   open,
   item,
   onClose,
-  onSaved,
 }: MenuItemFormProps) {
   const [form, setForm] =
     useState<MenuItemFormValues>(
@@ -633,7 +631,7 @@ export function MenuItemForm({
           userId: session?.user?.id ?? null,
           email: session?.user?.email ?? null,
         });
-        
+
         const {
           data,
           error,
@@ -988,7 +986,6 @@ export function MenuItemForm({
        * Tell the parent page that the
        * database has changed.
        */
-      onSaved?.();
 
       onClose();
     } catch (error) {
@@ -1135,7 +1132,7 @@ export function MenuItemForm({
               {/* PRICE */}
               <div>
                 <label className="text-sm text-muted-foreground">
-                  Price ($)
+                  Price (₱)
                 </label>
 
                 <input

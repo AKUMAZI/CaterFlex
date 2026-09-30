@@ -88,7 +88,6 @@ export interface OperatorSettings {
   maxEventsPerDay: Record<DayOfWeek, number>;
   maxGuestsPerEvent: number;
   maxMealPrepFulfillmentsPerDay: Record<DayOfWeek, number>;
-  maxServingsPerMealPrepOrder: number;
 }
 
 // Booking Types

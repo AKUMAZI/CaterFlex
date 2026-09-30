@@ -676,7 +676,7 @@ export default function MenuPage() {
                               </h3>
 
                               <span className="text-lg font-semibold text-primary whitespace-nowrap">
-                                ${item.price}
+                                ₱{item.price}
                               </span>
                             </div>
 
