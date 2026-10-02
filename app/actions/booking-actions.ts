@@ -69,16 +69,53 @@ export async function createBooking(bookingDetails: BookingDetails, items: Booki
   const customerAllergenNames = new Set((customerAllergies ?? []).map((allergy) => allergenNamesById.get(Number(allergy.AllergyTagID))).filter(Boolean))
   const hasAllergenConflict = (menuItemAllergies ?? []).some((allergy) => customerAllergenNames.has(allergenNamesById.get(Number(allergy.AllergyTagID)) ?? ''))
 
-  const { data: booking, error } = await admin.from('BOOKING').insert({
+  const eventDate = String(bookingDetails.eventDate ?? '').trim()
+const eventTime = String(bookingDetails.eventTime ?? '').trim()
+const venue = String(bookingDetails.venue ?? '').trim()
+const guestCount = Number(bookingDetails.guestCount ?? 0)
+
+if (!eventDate) {
+  return {
+    ok: false as const,
+    error: 'Event date is required.',
+  }
+}
+
+if (!eventTime) {
+  return {
+    ok: false as const,
+    error: 'Event time is required.',
+  }
+}
+
+if (!venue) {
+  return {
+    ok: false as const,
+    error: 'Venue is required.',
+  }
+}
+
+if (!Number.isFinite(guestCount) || guestCount <= 0) {
+  return {
+    ok: false as const,
+    error: 'Guest count must be greater than 0.',
+  }
+}
+
+const { data: booking, error } = await admin
+  .from('BOOKING')
+  .insert({
     CustomerID: customerId,
     OperatorID: 2,
-    EventDate: String(bookingDetails.eventDate ?? ''),
-    EventTime: String(bookingDetails.eventTime ?? ''),
-    Venue: String(bookingDetails.venue ?? ''),
-    GuestCount: Number(bookingDetails.guestCount ?? 0),
+    EventDate: eventDate,
+    EventTime: eventTime,
+    Venue: venue,
+    GuestCount: guestCount,
     Status: 'pending',
     AllergenConflictFlag: hasAllergenConflict,
-  }).select('BookingID').single()
+  })
+  .select('BookingID')
+  .single()
 
   if (error || !booking) return { ok: false as const, error: error?.message ?? 'Unable to retrieve the booking ID.' }
 

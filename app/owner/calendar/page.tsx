@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { getCustomersByIds } from '@/app/actions/auth';
 
 interface CalendarBooking {
   BookingID: number;
@@ -78,29 +79,33 @@ export default function CalendarPage() {
         return;
       }
 
-      /*
-       * Get the customers belonging to the bookings.
-       */
+     /*
+      * Get the customers belonging to the bookings.
+      *
+      * CUSTOMER is protected by RLS, so we do not query it
+      * directly from the browser. Instead, use the owner-only
+      * server action that reads the customer records securely.
+      */
       const customerIds = [
         ...new Set(
           bookingRows.map((booking) => booking.CustomerID)
         ),
       ];
 
-      const {
-        data: customerRows,
-        error: customerError,
-      } = await supabase
-        .from('CUSTOMER')
-        .select('CustomerID, Name')
-        .in('CustomerID', customerIds);
+      const customerResult = await getCustomersByIds(customerIds);
 
-      if (customerError) {
-        console.error('CUSTOMER loading error:', customerError);
+      if (!customerResult.ok) {
+        console.error(
+          'CUSTOMER loading error:',
+          customerResult.error
+        );
+
         throw new Error(
-          `Failed to load customers: ${customerError.message}`
+          `Failed to load customers: ${customerResult.error}`
         );
       }
+
+      const customerRows = customerResult.customers;
 
       /*
        * Match each booking with its customer.
@@ -229,18 +234,15 @@ export default function CalendarPage() {
    */
   const getBookingsForDate = (day: number) => {
     const year = currentDate.getFullYear();
-    const month = String(
-      currentDate.getMonth() + 1
-    ).padStart(2, '0');
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
     const dayString = String(day).padStart(2, '0');
-
-    const calendarDate =
-      `${year}-${month}-${dayString}`;
-
-    return bookings.filter(
-      (booking) =>
-        booking.EventDate === calendarDate
-    );
+  
+    const calendarDate = `${year}-${month}-${dayString}`;
+  
+    return bookings.filter((booking) => {
+      const bookingDate = String(booking.EventDate).split('T')[0];
+      return bookingDate === calendarDate;
+    });
   };
 
   const days = getDaysInMonth(currentDate);
@@ -274,11 +276,11 @@ export default function CalendarPage() {
     .toISOString()
     .split('T')[0];
 
-  const upcomingBookings = bookings
-    .filter(
-      (booking) =>
-        booking.EventDate >= todayString
-    )
+    const upcomingBookings = bookings
+    .filter((booking) => {
+      const bookingDate = String(booking.EventDate).split('T')[0];
+      return bookingDate >= todayString;
+    })
     .sort(
       (a, b) =>
         a.EventDate.localeCompare(b.EventDate)

@@ -1,6 +1,7 @@
 'use client';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
+import { updateIngredientStock } from '@/app/actions/inventory-actions';
 import { Card } from '@/components/ui/card';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -421,62 +422,47 @@ export default function InventoryPage() {
    */
   const handleSave = async (id: string) => {
     const newStock = Number(editValue);
-
+  
     if (!Number.isFinite(newStock) || newStock < 0) {
-      alert(
-        'Please enter a valid stock amount.'
-      );
+      alert('Please enter a valid stock amount.');
       return;
     }
-
+  
     setSavingId(id);
-
+  
     try {
       const ingredientId = Number(id);
-
-      const {
-        data,
-        error,
-      } = await supabase
-        .from('INGREDIENT')
-        .update({
-          CurrentStock: newStock,
-        })
-        .eq('IngredientID', ingredientId)
-        .select(
-          'IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity'
-        )
-        .single();
-
-      if (error) {
+  
+      const result = await updateIngredientStock(
+        ingredientId,
+        newStock
+      );
+  
+      if (!result.ok) {
         console.error(
           'Ingredient stock update error:',
-          error
+          result.error
         );
-
+  
         alert(
-          `Failed to update stock: ${error.message}`
+          `Failed to update stock: ${result.error}`
         );
-
+  
         return;
       }
-
-      /*
-       * Update the local page state using
-       * the value returned by Supabase.
-       */
-      const updatedIngredient = mapIngredient(
-        data as DatabaseIngredient
-      );
-
+  
+      // Only update the UI after the database update succeeds.
       setIngredients((current) =>
         current.map((ingredient) =>
           ingredient.id === id
-            ? updatedIngredient
+            ? {
+                ...ingredient,
+                currentStock: result.currentStock,
+              }
             : ingredient
         )
       );
-
+  
       setEditingId(null);
       setEditValue('');
     } catch (error) {
@@ -484,7 +470,7 @@ export default function InventoryPage() {
         'Unexpected stock update error:',
         error
       );
-
+  
       alert(
         'An unexpected error occurred while updating stock.'
       );

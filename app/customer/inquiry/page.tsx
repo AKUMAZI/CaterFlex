@@ -285,42 +285,96 @@ export default function InquiryPage() {
         const { data: tags, error } = await supabase
           .from('ALLERGY_TAG')
           .select('AllergyTagID, AllergenName');
-
-        if (error) throw error;
-        const validTags = (tags ?? []) as Array<{ AllergyTagID: number; AllergenName: string }>;
-        setAllergyTagRows(validTags);
-        if (validTags.length > 0) {
-          setAllergenOptions(validTags.map((tag) => tag.AllergenName as AllergenType));
+  
+        if (error) {
+          throw error;
         }
-
-        const customerAllergiesResult = await getCustomerAllergies();
-
+  
+        const validTags =
+          (tags ?? []) as Array<{
+            AllergyTagID: number;
+            AllergenName: string;
+          }>;
+  
+        setAllergyTagRows(validTags);
+  
+        // Normalize database allergen names so they match AllergenType.
+        const normalizedOptions = validTags
+          .map((tag) => tag.AllergenName.trim().toLowerCase())
+          .filter((name): name is AllergenType =>
+            ALLERGEN_OPTIONS.includes(name as AllergenType)
+          );
+  
+        if (normalizedOptions.length > 0) {
+          setAllergenOptions(normalizedOptions);
+        } else {
+          setAllergenOptions(ALLERGEN_OPTIONS);
+        }
+  
+        const customerAllergiesResult =
+          await getCustomerAllergies();
+  
         if (!customerAllergiesResult.ok) {
-          console.error('Failed to load customer allergies:', customerAllergiesResult.error);
+          console.error(
+            'Failed to load customer allergies:',
+            customerAllergiesResult.error
+          );
+  
+          setDietary([]);
+          setDietaryRestrictions([]);
           return;
         }
-
-        const customerAllergies = customerAllergiesResult.allergyTagIds;
-
+  
+        const customerAllergies =
+          customerAllergiesResult.allergyTagIds;
+  
         if (customerAllergies.length === 0) {
           setDietary([]);
           setDietaryRestrictions([]);
           return;
         }
-
+  
         const savedAllergies = customerAllergies
-          .map((customerAllergy) => validTags.find((item) => item.AllergyTagID === customerAllergy.AllergyTagID)?.AllergenName)
-          .filter((allergen): allergen is AllergenType => Boolean(allergen) && FALLBACK_ALLERGEN_OPTIONS.includes(allergen as AllergenType));
-
+          .map((customerAllergy) => {
+            const tag = validTags.find(
+              (item) =>
+                item.AllergyTagID ===
+                customerAllergy
+            );
+  
+            if (!tag) {
+              return null;
+            }
+  
+            const normalizedName =
+              tag.AllergenName.trim().toLowerCase();
+  
+            return ALLERGEN_OPTIONS.includes(
+              normalizedName as AllergenType
+            )
+              ? (normalizedName as AllergenType)
+              : null;
+          })
+          .filter(
+            (allergen): allergen is AllergenType =>
+              allergen !== null
+          );
+  
         setDietary(savedAllergies);
         setDietaryRestrictions(savedAllergies);
       } catch (error) {
-        console.error('Error loading customer allergies:', error);
+        console.error(
+          'Error loading customer allergies:',
+          error
+        );
+  
+        setDietary([]);
+        setDietaryRestrictions([]);
       } finally {
         setLoadingAllergies(false);
       }
     }
-
+  
     loadAllergies();
   }, [setDietaryRestrictions]);
 
@@ -424,13 +478,21 @@ export default function InquiryPage() {
    */
 
   const saveAllergies = async () => {
-    // Convert allergen names into AllergyTagIDs, preserving the existing
-    // delete-then-insert behavior in the server action.
     const selectedAllergyTagIds = allergyTagRows
-      .filter((tag) => dietary.includes(tag.AllergenName as AllergenType))
+      .filter((tag) => {
+        const normalizedName =
+          tag.AllergenName.trim().toLowerCase();
+  
+        return dietary.includes(
+          normalizedName as AllergenType
+        );
+      })
       .map((tag) => tag.AllergyTagID);
-
-    const result = await setCustomerAllergies(selectedAllergyTagIds);
+  
+    const result = await setCustomerAllergies(
+      selectedAllergyTagIds
+    );
+  
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -474,7 +536,9 @@ export default function InquiryPage() {
       setGuestCountError('');
     }
 
+    await saveAllergies();
     setDietaryRestrictions(dietary);
+    
 
     /*
      * ==========================================================
@@ -1154,7 +1218,7 @@ export default function InquiryPage() {
 
               <div className="grid md:grid-cols-2 gap-4">
 
-                {ALLERGEN_OPTIONS.map(
+                {allergenOptions.map(
                   (allergen) => (
                     <label
                       key={allergen}

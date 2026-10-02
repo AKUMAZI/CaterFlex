@@ -271,6 +271,30 @@ export default function BrowsePage() {
         String(customerBookingDraft.guestCount || '1'),
         10
       );
+
+      if (!eventDate) {
+        alert('Please select an event date.');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      if (!eventTime) {
+        alert('Please select an event time.');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      if (!venue) {
+        alert('Please enter a venue.');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      if (!Number.isFinite(guestCount) || guestCount <= 0) {
+        alert('Please enter a valid guest count.');
+        setIsSubmitting(false);
+        return;
+      }
   
       // Validate customer account
       if (!currentUser?.id) {
@@ -302,7 +326,13 @@ export default function BrowsePage() {
       }
 
       const result = await createBooking(
-        customerBookingDraft,
+        {
+          ...customerBookingDraft,
+          eventDate,
+          eventTime,
+          venue,
+          guestCount,
+        },
         validMenuItemIds.map((menuItemId) => ({
           MenuItemID: Number(menuItemId),
           Quantity: 1,
