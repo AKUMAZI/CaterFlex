@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { CustomerShell } from '@/app/customer/customer-shell';
 import { useAppState } from '@/lib/state';
 import { useRouter } from 'next/navigation';
@@ -15,6 +16,13 @@ import {
   getUniqueConflictingAllergens,
 } from '@/lib/rules/allergenFiltering';
 import type { MenuItem } from '@/lib/types';
+
+const menuPlaceholderImages = [
+  '/food-placeholder-1.png',
+  '/food-placeholder-2.png',
+  '/food-placeholder-3.png',
+  '/food-placeholder-4.png',
+];
 
 export default function BrowsePage() {
   const router = useRouter();
@@ -521,6 +529,19 @@ export default function BrowsePage() {
                         : selectMenuItem(item.id)
                     }
                   >
+                    <div className="relative mb-5 overflow-hidden rounded-xl">
+                      <Image
+                        src={menuPlaceholderImages[Number(item.id) % menuPlaceholderImages.length]}
+                        alt={`${item.name} food placeholder`}
+                        width={720}
+                        height={480}
+                        className="h-44 w-full object-cover transition-transform duration-300 hover:scale-105"
+                      />
+                      <span className="absolute bottom-3 left-3 rounded-full bg-card/90 px-3 py-1 text-xs font-medium text-card-foreground backdrop-blur-sm">
+                        {item.category || 'Chef&apos;s selection'}
+                      </span>
+                    </div>
+
                     <div className="flex justify-between items-start mb-3">
                       <h3 className="font-semibold text-card-foreground flex-1">
                         {item.name}
