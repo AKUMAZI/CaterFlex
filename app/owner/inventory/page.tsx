@@ -1,7 +1,11 @@
 'use client';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
-import { updateIngredientStock } from '@/app/actions/inventory-actions';
+import {
+  createIngredient,
+  updateIngredient,
+  updateIngredientStock,
+} from '@/app/actions/inventory-actions';
 import { Card } from '@/components/ui/card';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -38,6 +42,7 @@ type DatabaseIngredient = {
   UnitOfMeasure: string;
   CurrentStock: number;
   MaxStorageCapacity: number;
+  Category?: string | null;
 };
 
 type DatabaseDishIngredient = {
@@ -115,7 +120,9 @@ function mapIngredient(
     unit: ingredient.UnitOfMeasure,
     currentStock: Number(ingredient.CurrentStock),
     maxCapacity: Number(ingredient.MaxStorageCapacity),
-    category: getIngredientCategory(ingredient.IngredientName),
+    category:
+      (ingredient.Category as Exclude<IngredientCategory, 'all' | 'low'>) ||
+      getIngredientCategory(ingredient.IngredientName),
   };
 }
 
@@ -184,6 +191,13 @@ export default function InventoryPage() {
   const [editValue, setEditValue] = useState('');
 
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
+  const [formId, setFormId] = useState<string | null>(null);
+  const [formName, setFormName] = useState('');
+  const [formQuantity, setFormQuantity] = useState('');
+  const [formCategory, setFormCategory] = useState<Exclude<IngredientCategory, 'all' | 'low'>>('produce');
+  const [formSaving, setFormSaving] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
     'dishes' | 'ingredients'
@@ -215,7 +229,7 @@ export default function InventoryPage() {
         } = await supabase
           .from('INGREDIENT')
           .select(
-            'IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity'
+            'IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, Category'
           )
           .order('IngredientID');
 
@@ -406,6 +420,51 @@ export default function InventoryPage() {
     );
   }, [dishChecks, dishCategory]);
 
+  const openAddIngredient = () => {
+    setFormMode('add');
+    setFormId(null);
+    setFormName('');
+    setFormQuantity('');
+    setFormCategory('produce');
+    setFormOpen(true);
+  };
+
+  const openEditIngredient = (ingredient: Ingredient) => {
+    setFormMode('edit');
+    setFormId(ingredient.id);
+    setFormName(ingredient.name);
+    setFormQuantity(String(ingredient.currentStock));
+    setFormCategory(ingredient.category === 'other' ? 'pantry' : ingredient.category);
+    setFormOpen(true);
+  };
+
+  const handleIngredientSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const quantity = Number(formQuantity);
+    if (!formName.trim() || !Number.isFinite(quantity) || quantity < 0) {
+      alert('Enter a valid ingredient name and quantity.');
+      return;
+    }
+
+    setFormSaving(true);
+    const result = formMode === 'add'
+      ? await createIngredient({ name: formName, quantity, category: formCategory })
+      : await updateIngredient(Number(formId), { name: formName, quantity, category: formCategory });
+
+    if (!result.ok) {
+      alert(`Failed to ${formMode === 'add' ? 'add' : 'update'} ingredient: ${result.error}`);
+      setFormSaving(false);
+      return;
+    }
+
+    const mapped = mapIngredient(result.ingredient as DatabaseIngredient);
+    setIngredients((current) => formMode === 'add'
+      ? [...current, mapped].sort((a, b) => Number(a.id) - Number(b.id))
+      : current.map((ingredient) => ingredient.id === mapped.id ? mapped : ingredient));
+    setFormOpen(false);
+    setFormSaving(false);
+  };
+
   /*
    * Begin editing ingredient stock.
    */
@@ -544,15 +603,27 @@ export default function InventoryPage() {
       <div className="space-y-8">
 
         {/* PAGE HEADER */}
-        <div>
-          <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-            Inventory & dish availability
-          </h1>
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="font-heading text-3xl font-bold text-surface-foreground">
+              Inventory & dish availability
+            </h1>
 
-          <p className="text-surface-muted-foreground mt-2">
-            Track dish availability, ingredient stock,
-            and low inventory in one place.
-          </p>
+            <p className="text-surface-muted-foreground mt-2">
+              Track dish availability, ingredient stock,
+              and low inventory in one place.
+            </p>
+          </div>
+
+          {activeTab === 'ingredients' && (
+            <button
+              type="button"
+              onClick={openAddIngredient}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              Add ingredient
+            </button>
+          )}
         </div>
 
         {/* TAB SELECTOR */}
@@ -884,6 +955,43 @@ export default function InventoryPage() {
           </>
         )}
 
+        {formOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <form onSubmit={handleIngredientSubmit} className="w-full max-w-md rounded-2xl bg-background p-6 shadow-xl">
+              <h2 className="text-xl font-bold text-foreground">
+                {formMode === 'add' ? 'Add ingredient' : 'Edit ingredient'}
+              </h2>
+              <div className="mt-5 flex flex-col gap-4">
+                <label className="flex flex-col gap-1 text-sm font-medium">
+                  Name
+                  <input value={formName} onChange={(event) => setFormName(event.target.value)} className="rounded-lg border border-border bg-background px-3 py-2" required />
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium">
+                  Quantity
+                  <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-border bg-background px-3 py-2" required />
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium">
+                  Category
+                  <select value={formCategory} onChange={(event) => setFormCategory(event.target.value as typeof formCategory)} className="rounded-lg border border-border bg-background px-3 py-2">
+                    <option value="meats">Meats</option>
+                    <option value="dairy">Dairy</option>
+                    <option value="baking">Baking</option>
+                    <option value="produce">Produce</option>
+                    <option value="pantry">Pantry</option>
+                    <option value="herbs_spices">Herbs & spices</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-border px-4 py-2 text-sm" disabled={formSaving}>Cancel</button>
+                <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50" disabled={formSaving}>
+                  {formSaving ? 'Saving...' : formMode === 'add' ? 'Add ingredient' : 'Save changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         {/* INGREDIENTS TAB */}
         {activeTab === 'ingredients' && (
           <Card className="overflow-hidden">
@@ -914,6 +1022,7 @@ export default function InventoryPage() {
                     <th className="text-left p-6 font-semibold text-card-foreground">
                       Status
                     </th>
+                    <th className="p-6" aria-label="Actions" />
 
                   </tr>
                 </thead>
@@ -1078,6 +1187,15 @@ export default function InventoryPage() {
                               {statusLabel}
                             </span>
 
+                          </td>
+                          <td className="p-6 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openEditIngredient(ingredient)}
+                              className="rounded-lg border border-border px-3 py-1 text-sm hover:bg-muted"
+                            >
+                              Edit ingredient
+                            </button>
                           </td>
 
                         </tr>
