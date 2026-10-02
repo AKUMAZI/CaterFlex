@@ -956,23 +956,23 @@ export default function InventoryPage() {
         )}
 
         {formOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <form onSubmit={handleIngredientSubmit} className="w-full max-w-md rounded-2xl bg-background p-6 shadow-xl">
-              <h2 className="text-xl font-bold text-foreground">
+<div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-slate-950/75 p-4 backdrop-blur-[2px]">
+  <form onSubmit={handleIngredientSubmit} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl">
+  <h2 className="text-xl font-bold text-slate-900">
                 {formMode === 'add' ? 'Add ingredient' : 'Edit ingredient'}
               </h2>
               <div className="mt-5 flex flex-col gap-4">
-                <label className="flex flex-col gap-1 text-sm font-medium">
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
                   Name
-                  <input value={formName} onChange={(event) => setFormName(event.target.value)} className="rounded-lg border border-border bg-background px-3 py-2" required />
+                  <input value={formName} onChange={(event) => setFormName(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
                 </label>
-                <label className="flex flex-col gap-1 text-sm font-medium">
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
                   Quantity
-                  <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-border bg-background px-3 py-2" required />
+                  <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
                 </label>
-                <label className="flex flex-col gap-1 text-sm font-medium">
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
                   Category
-                  <select value={formCategory} onChange={(event) => setFormCategory(event.target.value as typeof formCategory)} className="rounded-lg border border-border bg-background px-3 py-2">
+                  <select value={formCategory} onChange={(event) => setFormCategory(event.target.value as typeof formCategory)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20">
                     <option value="meats">Meats</option>
                     <option value="dairy">Dairy</option>
                     <option value="baking">Baking</option>
@@ -983,7 +983,7 @@ export default function InventoryPage() {
                 </label>
               </div>
               <div className="mt-6 flex justify-end gap-3">
-                <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-border px-4 py-2 text-sm" disabled={formSaving}>Cancel</button>
+                <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100" disabled={formSaving}>Cancel</button>
                 <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50" disabled={formSaving}>
                   {formSaving ? 'Saving...' : formMode === 'add' ? 'Add ingredient' : 'Save changes'}
                 </button>
