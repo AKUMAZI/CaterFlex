@@ -227,19 +227,31 @@ const { data: booking, error } = await admin
 
 export async function getOwnerBookings() {
   const owner = await requireRole('owner')
-  if (!owner) return { ok: false as const, error: 'Owner access required.', bookings: [], bookingItems: [] }
+  if (!owner) return { ok: false as const, error: 'Owner access required.', bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
 
   const admin = createAdminClient()
-  const { data: bookings, error } = await admin.from('BOOKING').select(BOOKING_FIELDS).eq('OperatorID', Number(owner.id)).order('BookingID', { ascending: false })
-  if (error) return { ok: false as const, error: error.message, bookings: [], bookingItems: [] }
+  const operatorId = Number(owner.id)
+  const [{ data: bookings, error }, { data: mealPrepOrders, error: mealPrepError }] = await Promise.all([
+    admin.from('BOOKING').select(BOOKING_FIELDS).eq('OperatorID', operatorId).order('BookingID', { ascending: false }),
+    admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status, AllergenConflictFlag').eq('OperatorID', operatorId).order('MealPrepOrderID', { ascending: false }),
+  ])
+  if (error) return { ok: false as const, error: error.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
+  if (mealPrepError) return { ok: false as const, error: mealPrepError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
 
   const bookingIds = (bookings ?? []).map((booking) => booking.BookingID)
-  if (bookingIds.length === 0) return { ok: true as const, bookings: [], bookingItems: [] }
+  const mealPrepOrderIds = (mealPrepOrders ?? []).map((order) => order.MealPrepOrderID)
+  const [{ data: bookingItems, error: itemError }, { data: mealPrepItems, error: mealPrepItemError }] = await Promise.all([
+    bookingIds.length > 0
+      ? admin.from('BOOKING_ITEM').select(BOOKING_ITEM_FIELDS).in('BookingID', bookingIds)
+      : Promise.resolve({ data: [], error: null }),
+    mealPrepOrderIds.length > 0
+      ? admin.from('MEAL_PREP_ITEM').select('MealPrepItemID, MealPrepOrderID, MenuItemID, Quantity').in('MealPrepOrderID', mealPrepOrderIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (itemError) return { ok: false as const, error: itemError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
+  if (mealPrepItemError) return { ok: false as const, error: mealPrepItemError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
 
-  const { data: bookingItems, error: itemError } = await admin.from('BOOKING_ITEM').select(BOOKING_ITEM_FIELDS).in('BookingID', bookingIds)
-  if (itemError) return { ok: false as const, error: itemError.message, bookings: [], bookingItems: [] }
-
-  return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [] }
+  return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [] }
 }
 
 export async function updateBookingStatus(bookingId: number, newStatus: 'confirmed' | 'rejected') {
