@@ -11,14 +11,22 @@ import { useRouter } from 'next/navigation';
 
 export default function ActiveOrdersPage() {
   const router = useRouter();
-  const { bookings, menuItems, updateBooking } = useAppState();
+  const { currentUser, bookings, menuItems, updateBooking } = useAppState();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ servings: '', time: '', frequency: 'weekly', method: 'pickup', address: '', notes: '', dishIds: [] as string[] });
 
-  // Filter for confirmed meal prep orders only
-  const activeMealPrepOrders = bookings.filter(
-    (b) => b.orderType === 'meal_prep' && b.status === 'confirmed'
+  // Keep the tab scoped to the signed-in customer before applying meal-plan filters.
+  const customerBookings = currentUser
+    ? bookings.filter(
+        (booking) =>
+          booking.customerId === currentUser.id ||
+          booking.customerEmail.toLowerCase() === currentUser.email.toLowerCase()
+      )
+    : [];
+
+  const activeMealPrepOrders = customerBookings.filter(
+    (booking) => booking.orderType === 'meal_prep' && booking.status === 'confirmed'
   );
 
   const toggleOrderStatus = (bookingId: string, currentStatus: 'active' | 'paused') => {
