@@ -5,16 +5,63 @@ import { useAppState } from '@/lib/state';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getUpcomingFulfillmentDates } from '@/lib/rules/mealPrep';
+import { getCustomerMealPrepOrders } from '@/app/actions/booking-actions';
 import { Calendar, MapPin, Users, Clock, Pause, Play, Edit2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function ActiveOrdersPage() {
   const router = useRouter();
   const { currentUser, bookings, menuItems, updateBooking } = useAppState();
+  const [mealPrepOrders, setMealPrepOrders] = useState<Array<{
+    id: string;
+    customerId: string;
+    customerName: string;
+    customerEmail: string;
+    orderType: 'meal_prep';
+    eventDate: string;
+    eventTime: string;
+    eventType: string;
+    venue: string;
+    guestCount: number;
+    mealPrepFrequency: 'weekly' | 'biweekly';
+    fulfillmentMethod: 'pickup';
+    mealPrepStatus: 'active' | 'paused';
+    specialRequests: string;
+    status: 'pending' | 'confirmed';
+    selectedMenuItemIds: string[];
+  }>>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ servings: '', time: '', frequency: 'weekly', method: 'pickup', address: '', notes: '', dishIds: [] as string[] });
+
+  useEffect(() => {
+    getCustomerMealPrepOrders().then((result) => {
+      if (!result.ok) return;
+      setMealPrepOrders(result.orders
+        .filter((order) => order.Status === 'pending' || order.Status === 'confirmed')
+        .map((order) => ({
+          id: `meal-prep-${order.MealPrepOrderID}`,
+          customerId: String(order.CustomerID),
+          customerName: currentUser?.name ?? 'Customer',
+          customerEmail: currentUser?.email ?? '',
+          orderType: 'meal_prep' as const,
+          eventDate: new Date().toISOString().slice(0, 10),
+          eventTime: '12:00',
+          eventType: 'Meal prep plan',
+          venue: 'Kitchen',
+          guestCount: Number(order.MealsPerCycle ?? 0),
+          mealPrepFrequency: order.RecurrencePattern === 'biweekly' ? 'biweekly' as const : 'weekly' as const,
+          fulfillmentMethod: 'pickup' as const,
+          mealPrepStatus: order.Status === 'confirmed' ? 'active' as const : 'paused' as const,
+          specialRequests: '',
+          status: order.Status === 'confirmed' ? 'confirmed' as const : 'pending' as const,
+          selectedMenuItemIds: (result.items ?? [])
+            .filter((item) => item.MealPrepOrderID === order.MealPrepOrderID)
+            .map((item) => String(item.MenuItemID)),
+        })));
+    });
+  }, [currentUser?.email, currentUser?.name]);
 
   // Keep the tab scoped to the signed-in customer before applying meal-plan filters.
   const customerBookings = currentUser
@@ -25,9 +72,12 @@ export default function ActiveOrdersPage() {
       )
     : [];
 
-  const activeMealPrepOrders = customerBookings.filter(
-    (booking) => booking.orderType === 'meal_prep' && booking.status === 'confirmed'
-  );
+  const activeMealPrepOrders = [
+    ...customerBookings.filter(
+      (booking) => booking.orderType === 'meal_prep' && (booking.status === 'confirmed' || booking.status === 'pending')
+    ),
+    ...mealPrepOrders,
+  ];
 
   const toggleOrderStatus = (bookingId: string, currentStatus: 'active' | 'paused') => {
     updateBooking(bookingId, {

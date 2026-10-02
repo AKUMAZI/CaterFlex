@@ -92,6 +92,30 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
   return { ok: true as const, mealPrepOrderId: order.MealPrepOrderID }
 }
 
+export async function getCustomerMealPrepOrders() {
+  const customer = await requireRole('customer')
+  if (!customer) return { ok: false as const, error: 'Customer access required.', orders: [], items: [] }
+
+  const admin = createAdminClient()
+  const { data: orders, error } = await admin
+    .from('MEAL_PREP_ORDER')
+    .select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status, AllergenConflictFlag')
+    .eq('CustomerID', Number(customer.id))
+    .order('MealPrepOrderID', { ascending: false })
+  if (error) return { ok: false as const, error: error.message, orders: [], items: [] }
+
+  const orderIds = (orders ?? []).map((order) => order.MealPrepOrderID)
+  if (orderIds.length === 0) return { ok: true as const, orders: orders ?? [], items: [] }
+
+  const { data: items, error: itemError } = await admin
+    .from('MEAL_PREP_ITEM')
+    .select('MealPrepItemID, MealPrepOrderID, MenuItemID, Quantity')
+    .in('MealPrepOrderID', orderIds)
+  if (itemError) return { ok: false as const, error: itemError.message, orders: [], items: [] }
+
+  return { ok: true as const, orders: orders ?? [], items: items ?? [] }
+}
+
 export async function getCustomerBookings() {
   const customer = await requireRole('customer')
   if (!customer) return { ok: false as const, error: 'Customer access required.', bookings: [], bookingItems: [] }
