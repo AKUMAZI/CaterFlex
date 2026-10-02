@@ -237,35 +237,35 @@ export default function ActiveOrdersPage() {
 
                     {editingId === booking.id && (
                       <>
-                        <div className="mb-6 rounded-xl border border-primary/30 bg-background p-4">
-                        <p className="mb-3 text-sm font-medium text-card-foreground">Dishes in this meal plan</p>
+                        <div className="mb-6 rounded-xl border border-[#8b2a28] bg-[#8b2a28] p-3 text-[#241f1b]">
+                        <p className="mb-3 text-xs font-medium text-[#241f1b]">Dishes in this meal plan</p>
                         <div className="grid gap-2 sm:grid-cols-2">
                           {menuItems.map((dish) => (
-                            <label key={dish.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm text-card-foreground hover:bg-muted/50">
-                              <input type="checkbox" checked={editDraft.dishIds.includes(dish.id)} onChange={(event) => setEditDraft({ ...editDraft, dishIds: event.target.checked ? [...editDraft.dishIds, dish.id] : editDraft.dishIds.filter((id) => id !== dish.id) })} className="size-4 accent-primary" />
+                            <label key={dish.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#241f1b] bg-[#f7f3ed] p-3 text-sm text-[#241f1b] hover:bg-[#eee7dd]">
+                              <input type="checkbox" checked={editDraft.dishIds.includes(dish.id)} onChange={(event) => setEditDraft({ ...editDraft, dishIds: event.target.checked ? [...editDraft.dishIds, dish.id] : editDraft.dishIds.filter((id) => id !== dish.id) })} className="size-4 accent-[#c86e4b]" />
                               <span>{dish.name}</span>
                             </label>
                           ))}
                         </div>
                       </div>
-                      <div className="mb-6 grid gap-4 rounded-xl border border-primary/30 bg-background p-4 md:grid-cols-2">
-                        <label className="text-sm font-medium text-card-foreground">Servings
-                          <input type="number" min="1" value={editDraft.servings} onChange={(e) => setEditDraft({ ...editDraft, servings: e.target.value })} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2" />
+                      <div className="mb-6 grid gap-4 rounded-xl border border-[#8b2a28] bg-[#8b2a28] p-3 text-[#241f1b] md:grid-cols-2">
+                        <label className="text-xs font-medium text-[#241f1b]">Servings
+                          <input type="number" min="1" value={editDraft.servings} onChange={(e) => setEditDraft({ ...editDraft, servings: e.target.value })} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-[#241f1b] outline-none focus:ring-2 focus:ring-[#c86e4b]" />
                         </label>
-                        <label className="text-sm font-medium text-card-foreground">Fulfillment time
-                          <input type="time" value={editDraft.time} onChange={(e) => setEditDraft({ ...editDraft, time: e.target.value })} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2" />
+                        <label className="text-xs font-medium text-[#241f1b]">Fulfillment time
+                          <input type="time" value={editDraft.time} onChange={(e) => setEditDraft({ ...editDraft, time: e.target.value })} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-[#241f1b] outline-none focus:ring-2 focus:ring-[#c86e4b]" />
                         </label>
-                        <label className="text-sm font-medium text-card-foreground">Frequency
-                          <select value={editDraft.frequency} onChange={(e) => setEditDraft({ ...editDraft, frequency: e.target.value })} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2"><option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks</option></select>
+                        <label className="text-xs font-medium text-[#241f1b]">Frequency
+                          <select value={editDraft.frequency} onChange={(e) => setEditDraft({ ...editDraft, frequency: e.target.value })} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-[#241f1b] outline-none focus:ring-2 focus:ring-[#c86e4b]"><option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks</option></select>
                         </label>
-                        <label className="text-sm font-medium text-card-foreground">Fulfillment method
-                          <select value={editDraft.method} onChange={(e) => setEditDraft({ ...editDraft, method: e.target.value })} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2"><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select>
+                        <label className="text-xs font-medium text-[#241f1b]">Fulfillment method
+                          <select value={editDraft.method} onChange={(e) => setEditDraft({ ...editDraft, method: e.target.value })} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-[#241f1b] outline-none focus:ring-2 focus:ring-[#c86e4b]"><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select>
                         </label>
-                        {editDraft.method === 'delivery' && <label className="text-sm font-medium text-card-foreground md:col-span-2">Delivery address
-                          <input value={editDraft.address} onChange={(e) => setEditDraft({ ...editDraft, address: e.target.value })} required className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2" />
+                        {editDraft.method === 'delivery' && <label className="text-xs font-medium text-[#241f1b] md:col-span-2">Delivery address
+                          <input value={editDraft.address} onChange={(e) => setEditDraft({ ...editDraft, address: e.target.value })} required className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-[#241f1b] outline-none focus:ring-2 focus:ring-[#c86e4b]" />
                         </label>}
-                        <label className="text-sm font-medium text-card-foreground md:col-span-2">Special requests
-                          <textarea value={editDraft.notes} onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })} rows={3} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2" />
+                        <label className="text-xs font-medium text-[#241f1b] md:col-span-2">Special requests
+                          <textarea value={editDraft.notes} onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })} rows={3} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-[#241f1b] outline-none focus:ring-2 focus:ring-[#c86e4b]" />
                         </label>
                       </div>
                       </>
