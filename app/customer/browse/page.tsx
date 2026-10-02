@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Check, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { createBooking } from '@/app/actions/booking-actions';
+import { createBooking, createMealPrepOrder } from '@/app/actions/booking-actions';
 import { getCustomerAllergies } from '@/app/actions/allergy-actions';
 import {
   checkAllergenConflict,
@@ -35,6 +35,7 @@ export default function BrowsePage() {
     selectMenuItem,
     deselectMenuItem,
     customerBookingDraft,
+    customerOrderType,
     clearCustomerSession,
   } = useAppState();
 
@@ -333,27 +334,42 @@ export default function BrowsePage() {
         return;
       }
 
-      const result = await createBooking(
-        {
-          ...customerBookingDraft,
-          eventDate,
-          eventTime,
-          venue,
-          guestCount,
-        },
-        validMenuItemIds.map((menuItemId) => ({
-          MenuItemID: Number(menuItemId),
-          Quantity: 1,
-        }))
-      );
+      const selectedItems = validMenuItemIds.map((menuItemId) => ({
+        MenuItemID: Number(menuItemId),
+        Quantity: 1,
+      }));
+      const isMealPrepOrder = customerOrderType === 'meal_prep' || customerBookingDraft.orderType === 'meal_prep';
+      const result = isMealPrepOrder
+        ? await createMealPrepOrder({
+            mealPrepFrequency: customerBookingDraft.mealPrepFrequency,
+            guestCount,
+          }, selectedItems)
+        : await createBooking({
+            ...customerBookingDraft,
+            eventDate,
+            eventTime,
+            venue,
+            guestCount,
+          }, selectedItems);
 
       if (!result.ok) {
-        console.error('BOOKING INSERT ERROR:', result.error);
-        alert(`Booking failed: ${result.error}`);
+        console.error(isMealPrepOrder ? 'MEAL_PREP_ORDER INSERT ERROR:' : 'BOOKING INSERT ERROR:', result.error);
+        alert(`${isMealPrepOrder ? 'Meal prep order' : 'Booking'} failed: ${result.error}`);
         setIsSubmitting(false);
         return;
       }
-  
+
+      if (isMealPrepOrder) {
+        setShowBookingSuccess(true);
+        return;
+      }
+
+      const bookingId = 'bookingId' in result ? result.bookingId : null;
+      if (bookingId === null) {
+        alert('Booking failed: no booking ID was returned.');
+        setIsSubmitting(false);
+        return;
+      }
   
       /*
        * Calculate invoice total
@@ -391,7 +407,7 @@ export default function BrowsePage() {
       } = await supabase
         .from('INVOICE')
         .insert({
-          BookingID: result.bookingId,
+          BookingID: bookingId,
           TotalAmount: totalAmount,
           DateGenerated: new Date().toISOString(),
         })
@@ -413,7 +429,7 @@ export default function BrowsePage() {
           .delete()
           .eq(
             'BookingID',
-            result.bookingId
+            bookingId
           );
   
         await supabase
@@ -421,7 +437,7 @@ export default function BrowsePage() {
           .delete()
           .eq(
             'BookingID',
-            result.bookingId
+            bookingId
           );
   
         alert(

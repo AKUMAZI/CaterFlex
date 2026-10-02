@@ -19,6 +19,79 @@ type BookingItemInput = {
   Quantity?: number
 }
 
+type MealPrepOrderDetails = {
+  mealPrepFrequency?: string | null
+  guestCount?: number
+}
+
+export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, items: BookingItemInput[]) {
+  const customer = await requireRole('customer')
+  if (!customer) return { ok: false as const, error: 'Customer access required.' }
+
+  const admin = createAdminClient()
+  const customerId = Number(customer.id)
+  const selectedMenuItemIds = items.map((item) => Number(item.MenuItemID)).filter(Number.isFinite)
+
+  const { data: customerAllergies, error: customerAllergyError } = await admin
+    .from('CUSTOMER_ALLERGY')
+    .select('AllergyTagID')
+    .eq('CustomerID', customerId)
+  if (customerAllergyError) return { ok: false as const, error: customerAllergyError.message }
+
+  const { data: menuItemAllergies, error: menuItemAllergyError } = selectedMenuItemIds.length > 0
+    ? await admin.from('MENU_ITEM_ALLERGY').select('MenuItemID, AllergyTagID').in('MenuItemID', selectedMenuItemIds)
+    : { data: [], error: null }
+  if (menuItemAllergyError) return { ok: false as const, error: menuItemAllergyError.message }
+
+  const allergyTagIds = Array.from(new Set([
+    ...(customerAllergies ?? []).map((allergy) => Number(allergy.AllergyTagID)),
+    ...(menuItemAllergies ?? []).map((allergy) => Number(allergy.AllergyTagID)),
+  ].filter(Number.isFinite)))
+  const { data: allergyTags, error: allergyTagError } = allergyTagIds.length > 0
+    ? await admin.from('ALLERGY_TAG').select('AllergyTagID, AllergenName').in('AllergyTagID', allergyTagIds)
+    : { data: [], error: null }
+  if (allergyTagError) return { ok: false as const, error: allergyTagError.message }
+
+  const allergenNamesById = new Map((allergyTags ?? []).map((tag) => [Number(tag.AllergyTagID), String(tag.AllergenName).trim().toLowerCase()]))
+  const customerAllergenNames = new Set((customerAllergies ?? []).map((allergy) => allergenNamesById.get(Number(allergy.AllergyTagID))).filter(Boolean))
+  const hasAllergenConflict = (menuItemAllergies ?? []).some((allergy) => customerAllergenNames.has(allergenNamesById.get(Number(allergy.AllergyTagID)) ?? ''))
+  const mealsPerCycle = Number(orderDetails.guestCount ?? 0)
+  const recurrencePattern = String(orderDetails.mealPrepFrequency ?? 'weekly').trim() || 'weekly'
+
+  if (!Number.isFinite(mealsPerCycle) || mealsPerCycle <= 0) {
+    return { ok: false as const, error: 'Meals per cycle must be greater than 0.' }
+  }
+  if (selectedMenuItemIds.length === 0) {
+    return { ok: false as const, error: 'Please select at least one valid menu item.' }
+  }
+
+  const { data: order, error } = await admin
+    .from('MEAL_PREP_ORDER')
+    .insert({
+      CustomerID: customerId,
+      OperatorID: 2,
+      RecurrencePattern: recurrencePattern,
+      MealsPerCycle: mealsPerCycle,
+      Status: 'pending',
+      AllergenConflictFlag: hasAllergenConflict,
+    })
+    .select('MealPrepOrderID')
+    .single()
+  if (error || !order) return { ok: false as const, error: error?.message ?? 'Unable to create the meal prep order.' }
+
+  const { error: itemError } = await admin.from('MEAL_PREP_ITEM').insert(items.map((item) => ({
+    MealPrepOrderID: order.MealPrepOrderID,
+    MenuItemID: Number(item.MenuItemID),
+    Quantity: Number(item.Quantity ?? 1),
+  })))
+  if (itemError) {
+    await admin.from('MEAL_PREP_ORDER').delete().eq('MealPrepOrderID', order.MealPrepOrderID)
+    return { ok: false as const, error: itemError.message }
+  }
+
+  return { ok: true as const, mealPrepOrderId: order.MealPrepOrderID }
+}
+
 export async function getCustomerBookings() {
   const customer = await requireRole('customer')
   if (!customer) return { ok: false as const, error: 'Customer access required.', bookings: [], bookingItems: [] }
