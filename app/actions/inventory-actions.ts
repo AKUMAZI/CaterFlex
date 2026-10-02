@@ -58,7 +58,7 @@ export async function updateIngredient(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('INGREDIENT')
-    .update({ IngredientName: name, CurrentStock: input.quantity, Category: input.category })
+    .update({ IngredientName: name, CurrentStock: input.quantity, category: input.category })
     .eq('IngredientID', ingredientId)
     .select('IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, category')
     .single();
