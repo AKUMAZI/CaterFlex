@@ -42,7 +42,7 @@ type DatabaseIngredient = {
   UnitOfMeasure: string;
   CurrentStock: number;
   MaxStorageCapacity: number;
-  Category?: string | null;
+  category?: string | null;
 };
 
 type DatabaseDishIngredient = {
@@ -121,7 +121,7 @@ function mapIngredient(
     currentStock: Number(ingredient.CurrentStock),
     maxCapacity: Number(ingredient.MaxStorageCapacity),
     category:
-      (ingredient.Category as Exclude<IngredientCategory, 'all' | 'low'>) ||
+      (ingredient.category as Exclude<IngredientCategory, 'all' | 'low'>) ||
       getIngredientCategory(ingredient.IngredientName),
   };
 }
@@ -229,7 +229,7 @@ export default function InventoryPage() {
         } = await supabase
           .from('INGREDIENT')
           .select(
-            'IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, Category'
+            'IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, category'
           )
           .order('IngredientID');
 

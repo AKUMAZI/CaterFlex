@@ -25,11 +25,11 @@ export async function createIngredient(input: {
     .insert({
       IngredientName: name,
       CurrentStock: input.quantity,
-      Category: input.category,
+      category: input.category,
       UnitOfMeasure: 'units',
       MaxStorageCapacity: Math.max(input.quantity, 100),
     })
-    .select('IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, Category')
+    .select('IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, category')
     .single();
 
   if (error) {
@@ -60,7 +60,7 @@ export async function updateIngredient(
     .from('INGREDIENT')
     .update({ IngredientName: name, CurrentStock: input.quantity, Category: input.category })
     .eq('IngredientID', ingredientId)
-    .select('IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, Category')
+    .select('IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, category')
     .single();
 
   if (error) {
