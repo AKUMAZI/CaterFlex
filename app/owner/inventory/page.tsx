@@ -776,6 +776,30 @@ export default function InventoryPage() {
                     i.category === 'baking'
                 ).length,
               ],
+              [
+                'produce',
+                'Produce',
+                ingredients.filter(
+                  (i) =>
+                    i.category === 'produce'
+                ).length,
+              ],
+              [
+                'pantry',
+                'Pantry',
+                ingredients.filter(
+                  (i) =>
+                    i.category === 'pantry'
+                ).length,
+              ],
+              [
+                'herbs_spices',
+                'Herbs & spices',
+                ingredients.filter(
+                  (i) =>
+                    i.category === 'herbs_spices'
+                ).length,
+              ],
             ].map(
               ([value, label, count]) => (
                 <button
