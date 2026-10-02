@@ -22,6 +22,7 @@ export interface BusinessOwnerRow {
   BusinessName: string;
   OwnerName: string;
   Contact: string;
+  Password?: string | null;
 }
 
 // Allergen Types
