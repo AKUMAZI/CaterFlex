@@ -71,26 +71,31 @@ export async function updateIngredient(
   return { ok: true as const, ingredient: data };
 }
 
-export async function createDish(input: { name: string; category: string; price: number; prepTimeDays: number; description: string }) {
-  const owner = await requireRole('owner');
-  if (!owner) return { ok: false as const, error: 'Owner access required.' };
-  const name = input.name.trim();
-  if (!name || !Number.isFinite(input.price) || input.price < 0 || !Number.isFinite(input.prepTimeDays) || input.prepTimeDays < 0) {
-    return { ok: false as const, error: 'Enter a valid dish name, price, and prep time.' };
+type DishIngredientInput = { ingredientId: number; quantity: number }
+
+export async function createDish(input: { name: string; category: string; price: number; prepTimeDays: number; description: string; availability?: boolean; ingredients?: DishIngredientInput[] }) {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.' }
+  const name = input.name.trim()
+  if (!name || !Number.isFinite(input.price) || input.price < 0 || !Number.isFinite(input.prepTimeDays) || input.prepTimeDays < 0) return { ok: false as const, error: 'Enter a valid dish name, price, and prep time.' }
+  const admin = createAdminClient()
+  const { data, error } = await admin.from('MENU_ITEM').insert({ ItemName: name, Category: input.category, Price: input.price, PrepTimeDays: input.prepTimeDays, Description: input.description.trim(), Availability: input.availability ?? true }).select('MenuItemID, ItemName, Category, Price, PrepTimeDays, Description, Availability').maybeSingle()
+  if (error || !data) return { ok: false as const, error: error?.message ?? 'The menu item could not be created.' }
+  if (input.ingredients?.length) {
+    const { error: ingredientError } = await admin.from('DISH_INGREDIENT').insert(input.ingredients.map((entry) => ({ MenuItemID: data.MenuItemID, IngredientID: entry.ingredientId, QuantityRequiredPerServing: entry.quantity })))
+    if (ingredientError) return { ok: false as const, error: ingredientError.message }
   }
-  const { data, error } = await createAdminClient().from('MENU_ITEM').insert({ ItemName: name, Category: input.category, Price: input.price, PrepTimeDays: input.prepTimeDays, Description: input.description.trim() }).select('MenuItemID, ItemName, Category, Price, PrepTimeDays, Description').single();
-  if (error) return { ok: false as const, error: error.message };
-  return { ok: true as const, menuItem: data };
+  return { ok: true as const, menuItem: data }
 }
 
-export async function updateDish(dishId: number, input: { name: string; category: string; description: string }) {
-  const owner = await requireRole('owner');
-  if (!owner) return { ok: false as const, error: 'Owner access required.' };
-  const name = input.name.trim();
-  if (!Number.isFinite(dishId) || !name) return { ok: false as const, error: 'Enter a valid dish name.' };
-  const { data, error } = await createAdminClient().from('MENU_ITEM').update({ ItemName: name, Category: input.category, Description: input.description.trim() }).eq('MenuItemID', dishId).select('MenuItemID, ItemName, Category, Price, PrepTimeDays, Description').single();
-  if (error) return { ok: false as const, error: error.message };
-  return { ok: true as const, menuItem: data };
+export async function updateDish(dishId: number, input: { name: string; category: string; price?: number; prepTimeDays?: number; description: string; availability?: boolean }) {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.' }
+  const name = input.name.trim()
+  if (!Number.isFinite(dishId) || !name || !Number.isFinite(input.price) || !Number.isFinite(input.prepTimeDays)) return { ok: false as const, error: 'Enter valid menu item details.' }
+  const { data, error } = await createAdminClient().from('MENU_ITEM').update({ ItemName: name, Category: input.category, ...(input.price === undefined ? {} : { Price: input.price }), ...(input.prepTimeDays === undefined ? {} : { PrepTimeDays: input.prepTimeDays }), Description: input.description.trim(), ...(input.availability === undefined ? {} : { Availability: input.availability }) }).eq('MenuItemID', dishId).select('MenuItemID, ItemName, Category, Price, PrepTimeDays, Description, Availability').maybeSingle()
+  if (error || !data) return { ok: false as const, error: error?.message ?? 'The menu item could not be updated.' }
+  return { ok: true as const, menuItem: data }
 }
 
 export async function updateDishAvailability(dishId: number, availability: boolean) {
