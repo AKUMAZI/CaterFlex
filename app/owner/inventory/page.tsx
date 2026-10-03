@@ -214,7 +214,7 @@ export default function InventoryPage() {
 
   const [activeTab, setActiveTab] = useState<
     'dishes' | 'ingredients'
-  >('dishes');
+  >('ingredients');
 
   const [dishCategory, setDishCategory] = useState<
     'all' | 'mains' | 'appetizers' | 'sides' | 'desserts'
@@ -586,7 +586,7 @@ export default function InventoryPage() {
         <div className="space-y-8">
           <div>
             <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-              Inventory & dish availability
+              Ingredient inventory
             </h1>
 
             <p className="text-surface-muted-foreground mt-2">
@@ -611,7 +611,7 @@ export default function InventoryPage() {
         <div className="space-y-8">
           <div>
             <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-              Inventory & dish availability
+              Ingredient inventory
             </h1>
 
             <p className="text-surface-muted-foreground mt-2">
@@ -648,7 +648,7 @@ export default function InventoryPage() {
         <div className="flex items-end justify-between gap-4">
           <div>
             <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-              Inventory & dish availability
+              Ingredient inventory
             </h1>
 
             <p className="text-surface-muted-foreground mt-2">
@@ -657,9 +657,6 @@ export default function InventoryPage() {
             </p>
           </div>
 
-          {activeTab === 'dishes' && (
-            <button type="button" onClick={openAddDish} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90">Add dish</button>
-          )}
           {activeTab === 'ingredients' && (
             <button
               type="button"
@@ -674,20 +671,6 @@ export default function InventoryPage() {
         {/* TAB SELECTOR */}
         <div className="border-b border-border">
           <div className="flex gap-8">
-
-            <button
-              type="button"
-              onClick={() =>
-                setActiveTab('dishes')
-              }
-              className={`py-4 text-sm font-medium transition-colors ${
-                activeTab === 'dishes'
-                  ? 'border-b-2 border-primary text-card-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Dishes
-            </button>
 
             <button
               type="button"

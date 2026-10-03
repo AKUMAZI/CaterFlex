@@ -65,6 +65,7 @@ export default function MenuManagementPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
 
   useEffect(() => {
     async function loadMenu() {
@@ -132,6 +133,18 @@ export default function MenuManagementPage() {
     ]))
   }, [dishIngredients, ingredients, menuItems])
 
+  const categoryOptions = [
+    ['all', 'All Dishes'],
+    ['mains', 'Mains'],
+    ['appetizers', 'Appetizers'],
+    ['sides', 'Sides'],
+    ['desserts', 'Desserts'],
+    ['beverages', 'Beverages'],
+  ] as const
+  const visibleMenuItems = categoryFilter === 'all'
+    ? menuItems
+    : menuItems.filter((item) => item.Category.toLowerCase() === categoryFilter)
+
   const selectedItem = menuItems.find((item) => item.MenuItemID === selectedId) ?? null
   const selectedRows = selectedItem ? rowsByMenuItem.get(selectedItem.MenuItemID) ?? [] : []
   const selectedStatus = getStatus(selectedRows)
@@ -149,11 +162,20 @@ export default function MenuManagementPage() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><UtensilsCrossed className="size-4" />{menuItems.length} menu items</div>
         </div>
 
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          {categoryOptions.map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setCategoryFilter(value)} className={`rounded-2xl border-2 p-5 text-left transition-colors ${categoryFilter === value ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted/40'}`}>
+              <span className="text-sm font-medium">{label}</span>
+              <span className="mt-3 block text-4xl font-bold">{value === 'all' ? menuItems.length : menuItems.filter((item) => item.Category.toLowerCase() === value).length}</span>
+            </button>
+          ))}
+        </div>
+
         <Card>
           <CardHeader><CardTitle>Menu items</CardTitle><CardDescription>Select an item to inspect its per-serving ingredient requirements.</CardDescription></CardHeader>
           <CardContent className="p-0">
             {loading ? <div className="flex items-center justify-center gap-2 p-12 text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading menu data...</div> : errorMessage ? <div className="p-6 text-sm text-destructive">{errorMessage}</div> : menuItems.length === 0 ? <div className="p-12 text-center text-muted-foreground">No menu items found.</div> : (
-              <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-6 py-3 font-medium">Item</th><th className="px-4 py-3 font-medium">Category</th><th className="px-4 py-3 font-medium">Price</th><th className="px-4 py-3 font-medium">Prep time</th><th className="px-4 py-3 font-medium">Status</th><th className="px-6 py-3" /></tr></thead><tbody>{menuItems.map((item) => { const status = getStatus(rowsByMenuItem.get(item.MenuItemID) ?? []); return <tr key={item.MenuItemID} className="border-b last:border-0 hover:bg-muted/30"><td className="px-6 py-4 font-medium">{item.ItemName}</td><td className="px-4 py-4 capitalize text-muted-foreground">{item.Category}</td><td className="px-4 py-4">{formatPrice(item.Price)}</td><td className="px-4 py-4 text-muted-foreground">{item.PrepTimeDays} {item.PrepTimeDays === 1 ? 'day' : 'days'}</td><td className="px-4 py-4"><StatusBadge status={status} /></td><td className="px-6 py-4 text-right"><Button variant="ghost" size="sm" onClick={() => setSelectedId(item.MenuItemID)}>View details<ChevronRight data-icon="inline-end" /></Button></td></tr> })}</tbody></table></div>
+              <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="border-y bg-muted/40 text-left text-muted-foreground"><tr><th className="px-6 py-3 font-medium">Item</th><th className="px-4 py-3 font-medium">Category</th><th className="px-4 py-3 font-medium">Price</th><th className="px-4 py-3 font-medium">Prep time</th><th className="px-4 py-3 font-medium">Status</th><th className="px-6 py-3" /></tr></thead><tbody>{visibleMenuItems.map((item) => { const status = getStatus(rowsByMenuItem.get(item.MenuItemID) ?? []); return <tr key={item.MenuItemID} className="border-b last:border-0 hover:bg-muted/30"><td className="px-6 py-4 font-medium">{item.ItemName}</td><td className="px-4 py-4 capitalize text-muted-foreground">{item.Category}</td><td className="px-4 py-4">{formatPrice(item.Price)}</td><td className="px-4 py-4 text-muted-foreground">{item.PrepTimeDays} {item.PrepTimeDays === 1 ? 'day' : 'days'}</td><td className="px-4 py-4"><StatusBadge status={status} /></td><td className="px-6 py-4 text-right"><Button variant="ghost" size="sm" onClick={() => setSelectedId(item.MenuItemID)}>View details<ChevronRight data-icon="inline-end" /></Button></td></tr> })}</tbody></table></div>
             )}
           </CardContent>
         </Card>
