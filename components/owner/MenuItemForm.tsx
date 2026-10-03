@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 
-import { replaceDishIngredients } from '@/app/actions/menu-actions'
+import { replaceDishIngredients, replaceMenuItemAllergies } from '@/app/actions/menu-actions'
 import { supabase } from '@/lib/supabase';
 import type { AllergenType, MenuItem } from '@/lib/types';
 
@@ -767,29 +767,7 @@ export function MenuItemForm({
        * REMOVE OLD ALLERGEN RELATIONSHIPS
        * ====================================
        */
-      const {
-        error:
-          deleteAllergyError,
-      } = await supabase
-        .from('MENU_ITEM_ALLERGY')
-        .delete()
-        .eq(
-          'MenuItemID',
-          menuItemId
-        );
-
-      if (
-        deleteAllergyError
-      ) {
-        console.error(
-          'MENU_ITEM_ALLERGY DELETE ERROR:',
-          deleteAllergyError
-        );
-
-        throw new Error(
-          deleteAllergyError.message
-        );
-      }
+      // Allergen relationship writes run server-side for the same custom-session RLS boundary.
 
       /*
        * ====================================
@@ -831,87 +809,22 @@ export function MenuItemForm({
        * SAVE ALLERGEN RELATIONSHIPS
        * ====================================
        */
-      if (
-        form.allergyTags.length > 0
-      ) {
-        const menuAllergyRows =
-          form.allergyTags
-            .map((allergen) => {
-              const tag =
-                allergyTags.find(
-                  (allergy) =>
-                    allergy.AllergenName ===
-                    allergen
-                );
+      {
+        const menuAllergyRows = form.allergyTags
+          .map((allergen) => {
+            const tag = allergyTags.find((allergy) => allergy.AllergenName === allergen)
+            return tag ? { MenuItemID: menuItemId, AllergyTagID: tag.AllergyTagID } : null
+          })
+          .filter((row): row is { MenuItemID: number; AllergyTagID: number } => row !== null)
 
-              if (!tag) {
-                return null;
-              }
-
-              return {
-                MenuItemID:
-                  menuItemId,
-
-                AllergyTagID:
-                  tag.AllergyTagID,
-              };
-            })
-            .filter(
-              (
-                row
-              ): row is {
-                MenuItemID: number;
-                AllergyTagID: number;
-              } =>
-                row !== null
-            );
-
-        if (
-          menuAllergyRows.length > 0
-        ) {
-          console.log(
-            'MENU_ITEM_ALLERGY ROWS:',
-            menuAllergyRows
-          );
-
-          const {
-            error:
-              menuAllergyError,
-          } = await supabase
-            .from(
-              'MENU_ITEM_ALLERGY'
-            )
-            .insert(
-              menuAllergyRows
-            );
-
-          if (
-            menuAllergyError
-          ) {
-            console.error(
-              'MENU_ITEM_ALLERGY INSERT ERROR:',
-              menuAllergyError
-            );
-
-            /*
-             * If this is a newly created
-             * item and its relationships
-             * fail, remove the menu item.
-             */
-            if (!isEditing) {
-              await supabase
-                .from('MENU_ITEM')
-                .delete()
-                .eq(
-                  'MenuItemID',
-                  menuItemId
-                );
-            }
-
-            throw new Error(
-              menuAllergyError.message
-            );
+        try {
+          await replaceMenuItemAllergies(menuItemId, menuAllergyRows)
+        } catch (error) {
+          console.error('MENU_ITEM_ALLERGY SAVE ERROR:', error)
+          if (!isEditing) {
+            await supabase.from('MENU_ITEM').delete().eq('MenuItemID', menuItemId)
           }
+          throw error
         }
       }
 
