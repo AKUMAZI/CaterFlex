@@ -994,19 +994,19 @@ export default function InventoryPage() {
 
                       <div className="flex items-center gap-3">
 
-                        <span
-                          className={`text-xs font-medium px-2 py-1 rounded-full ${
-                            check.status ===
-                            'available'
-                              ? 'bg-green-100 text-green-800'
-                              : check.status ===
-                                'limited'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {check.status}
-                        </span>
+  <span
+  className={`text-xs font-medium px-2 py-1 rounded-full ${
+  unavailableDishIds.has(dish.id)
+  ? 'bg-red-100 text-red-800'
+  : check.status === 'available'
+  ? 'bg-green-100 text-green-800'
+  : check.status === 'limited'
+  ? 'bg-yellow-100 text-yellow-800'
+  : 'bg-red-100 text-red-800'
+  }`}
+  >
+  {unavailableDishIds.has(dish.id) ? 'unavailable' : check.status}
+  </span>
 
                         {check.shortfalls.length >
                           0 && (
