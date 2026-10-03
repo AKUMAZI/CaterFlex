@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 
+import { replaceDishIngredients } from '@/app/actions/menu-actions'
 import { supabase } from '@/lib/supabase';
 import type { AllergenType, MenuItem } from '@/lib/types';
 
@@ -758,29 +759,8 @@ export function MenuItemForm({
        * We remove the old rows first and
        * recreate them from the current form.
        */
-      const {
-        error:
-          deleteIngredientError,
-      } = await supabase
-        .from('DISH_INGREDIENT')
-        .delete()
-        .eq(
-          'MenuItemID',
-          menuItemId
-        );
+      // Relationship writes run server-side because the app's custom session is not a Supabase Auth session.
 
-      if (
-        deleteIngredientError
-      ) {
-        console.error(
-          'DISH_INGREDIENT DELETE ERROR:',
-          deleteIngredientError
-        );
-
-        throw new Error(
-          deleteIngredientError.message
-        );
-      }
 
       /*
        * ====================================
@@ -816,10 +796,7 @@ export function MenuItemForm({
        * SAVE INGREDIENT RELATIONSHIPS
        * ====================================
        */
-      if (
-        form.requiredIngredients
-          .length > 0
-      ) {
+      {
         const dishIngredientRows =
           form.requiredIngredients.map(
             (ingredient) => ({
@@ -838,41 +815,14 @@ export function MenuItemForm({
             })
           );
 
-        const {
-          error:
-            dishIngredientError,
-        } = await supabase
-          .from('DISH_INGREDIENT')
-          .insert(
-            dishIngredientRows
-          );
-
-        if (
-          dishIngredientError
-        ) {
-          console.error(
-            'DISH_INGREDIENT INSERT ERROR:',
-            dishIngredientError
-          );
-
-          /*
-           * If this was a newly created
-           * menu item, remove it if the
-           * relationship save failed.
-           */
+        try {
+          await replaceDishIngredients(menuItemId, dishIngredientRows)
+        } catch (error) {
+          console.error('DISH_INGREDIENT SAVE ERROR:', error)
           if (!isEditing) {
-            await supabase
-              .from('MENU_ITEM')
-              .delete()
-              .eq(
-                'MenuItemID',
-                menuItemId
-              );
+            await supabase.from('MENU_ITEM').delete().eq('MenuItemID', menuItemId)
           }
-
-          throw new Error(
-            dishIngredientError.message
-          );
+          throw error
         }
       }
 
