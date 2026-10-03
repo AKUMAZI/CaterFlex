@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 
-import { replaceDishIngredients, replaceMenuItemAllergies } from '@/app/actions/menu-actions'
+import { replaceDishIngredients, replaceMenuItemAllergies, updateMenuItem } from '@/app/actions/menu-actions'
 import { supabase } from '@/lib/supabase';
 import type { AllergenType, MenuItem } from '@/lib/types';
 
@@ -736,48 +736,14 @@ export function MenuItemForm({
           );
         }
 
-        const {
-          error,
-        } = await supabase
-          .from('MENU_ITEM')
-          .update({
-            ItemName:
-              form.name.trim(),
-
-            Category:
-              databaseCategory,
-
-            Price:
-              numericPrice,
-
-            PrepTimeDays:
-              Math.max(
-                0,
-                Number(
-                  form.prepTimeDays
-                ) || 0
-              ),
-
-            Description:
-              form.description.trim(),
-            Availability: form.availability !== false,
-          })
-          .eq(
-            'MenuItemID',
-            menuItemId
-          );
-
-        if (error) {
-          console.error(
-            'MENU_ITEM UPDATE ERROR:',
-            error
-          );
-
-          throw new Error(
-            error.message ||
-              'Unable to update the menu item.'
-          );
-        }
+        await updateMenuItem(menuItemId, {
+          ItemName: form.name.trim(),
+          Category: databaseCategory,
+          Price: numericPrice,
+          PrepTimeDays: Math.max(0, Number(form.prepTimeDays) || 0),
+          Description: form.description.trim(),
+          Availability: form.availability !== false,
+        })
       }
 
       /*

@@ -3,6 +3,24 @@
 import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
 
+type MenuItemUpdate = {
+  ItemName: string
+  Category: string
+  Price: number
+  PrepTimeDays: number
+  Description: string
+  Availability: boolean
+}
+
+export async function updateMenuItem(menuItemId: number, values: MenuItemUpdate) {
+  const user = await requireRole('owner')
+  if (!user) throw new Error('Unauthorized')
+
+  const admin = createAdminClient()
+  const { error } = await admin.from('MENU_ITEM').update(values).eq('MenuItemID', menuItemId)
+  if (error) throw new Error(error.message)
+}
+
 type DishIngredientRow = {
   MenuItemID: number
   IngredientID: number
