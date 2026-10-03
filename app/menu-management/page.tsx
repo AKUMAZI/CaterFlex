@@ -166,14 +166,31 @@ export default function MenuManagementPage() {
 
   const saveEdit = async (item: MenuItem) => {
     setSavingEdit(true)
-    const { data: updatedItem, error } = await supabase.from('MENU_ITEM').update({ ItemName: editName.trim(), Category: editCategory, Availability: editAvailable }).eq('MenuItemID', item.MenuItemID).select('MenuItemID, ItemName, Category, Availability').single()
+    setErrorMessage('')
+
+    const nextName = editName.trim()
+    const { error } = await supabase
+      .from('MENU_ITEM')
+      .update({
+        ItemName: nextName,
+        Category: editCategory,
+        Availability: editAvailable,
+      })
+      .eq('MenuItemID', item.MenuItemID)
+
     if (error) {
       setErrorMessage(error.message)
-    } else if (updatedItem) {
-      setMenuItems((current) => current.map((entry) => entry.MenuItemID === item.MenuItemID ? { ...entry, ItemName: updatedItem.ItemName, Category: updatedItem.Category, Availability: updatedItem.Availability } : entry))
+    } else {
+      // Do not request a single returned row here. An update with no visible
+      // rows can make PostgREST throw a misleading JSON coercion error.
+      setMenuItems((current) => current.map((entry) => entry.MenuItemID === item.MenuItemID
+        ? { ...entry, ItemName: nextName, Category: editCategory, Availability: editAvailable }
+        : entry
+      ))
+      setEditingId(null)
     }
+
     setSavingEdit(false)
-    if (!error) setEditingId(null)
   }
 
   return (
