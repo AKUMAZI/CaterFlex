@@ -72,6 +72,7 @@ function toFormValues(
       category: item.category,
       price: item.price,
       prepTimeDays: item.prepTimeDays,
+      availability: item.availability !== false,
       allergyTags: item.allergyTags ?? [],
       requiredIngredients:
         item.requiredIngredients ?? [],
@@ -85,6 +86,7 @@ function toFormValues(
     category: 'mains',
     price: 0,
     prepTimeDays: 1,
+    availability: true,
     allergyTags: [],
     requiredIngredients: [],
   };
@@ -657,6 +659,7 @@ export function MenuItemForm({
 
             Description:
               form.description.trim(),
+            Availability: form.availability !== false,
           })
           .select('MenuItemID')
           .single();
@@ -727,6 +730,7 @@ export function MenuItemForm({
 
             Description:
               form.description.trim(),
+            Availability: form.availability !== false,
           })
           .eq(
             'MenuItemID',
@@ -1176,6 +1180,17 @@ export function MenuItemForm({
                 />
               </div>
             </div>
+
+            {/* AVAILABILITY */}
+            <label className="flex items-center gap-3 text-sm text-card-foreground">
+              <input
+                type="checkbox"
+                checked={form.availability !== false}
+                onChange={(e) => setForm({ ...form, availability: e.target.checked })}
+                className="rounded border-border"
+              />
+              <span>Available for ordering</span>
+            </label>
 
             {/* ALLERGENS */}
             <div>
