@@ -708,7 +708,7 @@ export default function InventoryPage() {
 
         {/* DISH CATEGORIES */}
         {activeTab === 'dishes' && (
-          <div className="mt-6 flex flex-wrap gap-4">
+          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
 
             {[
               [
@@ -766,7 +766,7 @@ export default function InventoryPage() {
                       value as typeof dishCategory
                     )
                   }
-                  className={`flex-1 min-w-48 rounded-2xl border-2 p-5 text-left transition-all ${
+                  className={`min-w-0 rounded-2xl border-2 p-5 text-left transition-all ${
                     dishCategory === value
                       ? 'border-primary bg-primary/5'
                       : 'border-border bg-muted/20 hover:bg-muted/40'
