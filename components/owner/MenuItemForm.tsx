@@ -38,12 +38,39 @@ interface MenuItemFormProps {
   onClose: () => void;
 }
 
+type IngredientCategory = 'meats' | 'dairy' | 'baking' | 'produce' | 'pantry' | 'herbs_spices' | 'other'
+
 interface DbIngredient {
   IngredientID: number;
   IngredientName: string;
   UnitOfMeasure: string;
   CurrentStock: number;
   MaxStorageCapacity: number;
+  category?: string | null;
+}
+
+const ingredientCategoryLabels: Record<IngredientCategory, string> = {
+  meats: 'Meat & seafood',
+  dairy: 'Dairy & eggs',
+  baking: 'Baking',
+  produce: 'Produce',
+  pantry: 'Pantry',
+  herbs_spices: 'Herbs & spices',
+  other: 'Other',
+}
+
+function getIngredientCategory(ingredient: DbIngredient): IngredientCategory {
+  const category = ingredient.category?.toLowerCase().replace(/[- ]/g, '_')
+  if (category && category in ingredientCategoryLabels) return category as IngredientCategory
+
+  const name = ingredient.IngredientName.toLowerCase()
+  if (/chicken|beef|pork|salmon|shrimp|fish|turkey|bacon|meat/.test(name)) return 'meats'
+  if (/milk|cream|cheese|butter|yogurt|egg/.test(name)) return 'dairy'
+  if (/flour|sugar|yeast|baking|cocoa/.test(name)) return 'baking'
+  if (/salt|pepper|spice|cumin|paprika|cinnamon|oregano|basil|thyme|garlic powder/.test(name)) return 'herbs_spices'
+  if (/oil|vinegar|sauce|rice|pasta|bean|stock|broth|noodle/.test(name)) return 'pantry'
+  if (/tomato|onion|lettuce|carrot|potato|spinach|lemon|apple|berry|vegetable/.test(name)) return 'produce'
+  return 'other'
 }
 
 interface DbAllergyTag {
@@ -190,10 +217,12 @@ export function MenuItemForm({
             .select(
               `
                 IngredientID,
-                IngredientName,
-                UnitOfMeasure,
-                CurrentStock,
-                MaxStorageCapacity
+        IngredientName,
+        UnitOfMeasure,
+        CurrentStock,
+        MaxStorageCapacity,
+        category
+
               `
             )
             .order('IngredientName', {
@@ -1184,29 +1213,31 @@ export function MenuItemForm({
                       Select…
                     </option>
 
-                    {ingredients.map(
-                      (ingredient) => (
-                        <option
-                          key={
-                            ingredient.IngredientID
-                          }
-                          value={String(
-                            ingredient.IngredientID
-                          )}
-                        >
-                          {
-                            ingredient.IngredientName
-                          }
-                        </option>
+                    {Object.entries(
+                      ingredients.reduce<Record<IngredientCategory, DbIngredient[]>>(
+                        (groups, ingredient) => {
+                          const category = getIngredientCategory(ingredient)
+                          groups[category].push(ingredient)
+                          return groups
+                        },
+                        { meats: [], dairy: [], baking: [], produce: [], pantry: [], herbs_spices: [], other: [] }
                       )
-                    )}
+                    ).map(([category, categoryIngredients]) => categoryIngredients.length > 0 && (
+                      <optgroup key={category} label={ingredientCategoryLabels[category as IngredientCategory]}>
+                        {categoryIngredients.map((ingredient) => (
+                          <option key={ingredient.IngredientID} value={String(ingredient.IngredientID)}>
+                            {ingredient.IngredientName} ({ingredient.UnitOfMeasure || 'unit'})
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </div>
 
                 {/* QUANTITY */}
                 <div className="w-24">
-                  <label className="text-xs text-muted-foreground">
-                    Qty
+                    <label className="text-xs text-muted-foreground">
+                    Qty ({ingredients.find((ingredient) => String(ingredient.IngredientID) === ingredientId)?.UnitOfMeasure || 'unit'})
                   </label>
 
                   <input
