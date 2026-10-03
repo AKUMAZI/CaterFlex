@@ -6,6 +6,7 @@ import { DashboardLayout } from '@/app/dashboard-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { updateDishAvailability } from '@/app/actions/inventory-actions'
 import { supabase } from '@/lib/supabase'
 
 type MenuItem = {
@@ -169,18 +170,23 @@ export default function MenuManagementPage() {
     setErrorMessage('')
 
     const nextName = editName.trim()
-    const { error } = await supabase
-      .from('MENU_ITEM')
-      .update({
-        ItemName: nextName,
-        Category: editCategory,
-        Availability: editAvailable,
-      })
-      .eq('MenuItemID', item.MenuItemID)
+    const availabilityResult = await updateDishAvailability(item.MenuItemID, editAvailable)
 
-    if (error) {
-      setErrorMessage(error.message)
+    if (!availabilityResult.ok) {
+      setErrorMessage(availabilityResult.error)
     } else {
+      const { error } = await supabase
+        .from('MENU_ITEM')
+        .update({ ItemName: nextName, Category: editCategory })
+        .eq('MenuItemID', item.MenuItemID)
+
+      if (error) {
+        setErrorMessage(error.message)
+        setSavingEdit(false)
+        return
+      }
+
+
       setMenuItems((current) => current.map((entry) => entry.MenuItemID === item.MenuItemID
         ? { ...entry, ItemName: nextName, Category: editCategory, Availability: editAvailable }
         : entry
