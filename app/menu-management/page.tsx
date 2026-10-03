@@ -169,7 +169,7 @@ export default function MenuManagementPage() {
     setErrorMessage('')
 
     const nextName = editName.trim()
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('MENU_ITEM')
       .update({
         ItemName: nextName,
@@ -177,14 +177,15 @@ export default function MenuManagementPage() {
         Availability: editAvailable,
       })
       .eq('MenuItemID', item.MenuItemID)
+      .select('MenuItemID, ItemName, Category, Availability')
 
     if (error) {
       setErrorMessage(error.message)
+    } else if (!data || data.length !== 1) {
+      setErrorMessage('The menu item could not be updated. Refresh the page and try again.')
     } else {
-      // Do not request a single returned row here. An update with no visible
-      // rows can make PostgREST throw a misleading JSON coercion error.
       setMenuItems((current) => current.map((entry) => entry.MenuItemID === item.MenuItemID
-        ? { ...entry, ItemName: nextName, Category: editCategory, Availability: editAvailable }
+        ? { ...entry, ItemName: nextName, Category: editCategory, Availability: Boolean(data[0].Availability) }
         : entry
       ))
       setEditingId(null)
