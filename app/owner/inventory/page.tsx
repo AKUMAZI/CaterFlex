@@ -5,6 +5,8 @@ import {
   createIngredient,
   updateIngredient,
   updateIngredientStock,
+  createDish,
+  updateDish,
 } from '@/app/actions/inventory-actions';
 import { Card } from '@/components/ui/card';
 import { useEffect, useMemo, useState } from 'react';
@@ -198,6 +200,15 @@ export default function InventoryPage() {
   const [formQuantity, setFormQuantity] = useState('');
   const [formCategory, setFormCategory] = useState<Exclude<IngredientCategory, 'all' | 'low'>>('produce');
   const [formSaving, setFormSaving] = useState(false);
+  const [dishFormOpen, setDishFormOpen] = useState(false);
+  const [dishFormMode, setDishFormMode] = useState<'add' | 'edit'>('add');
+  const [dishFormId, setDishFormId] = useState<string | null>(null);
+  const [dishFormName, setDishFormName] = useState('');
+  const [dishFormCategory, setDishFormCategory] = useState<'mains' | 'appetizers' | 'sides' | 'desserts'>('mains');
+  const [dishFormDescription, setDishFormDescription] = useState('');
+  const [dishFormPrice, setDishFormPrice] = useState('0');
+  const [dishFormPrepTime, setDishFormPrepTime] = useState('1');
+  const [unavailableDishIds, setUnavailableDishIds] = useState<Set<string>>(new Set());
 
   const [activeTab, setActiveTab] = useState<
     'dishes' | 'ingredients'
@@ -420,6 +431,31 @@ export default function InventoryPage() {
     );
   }, [dishChecks, dishCategory]);
 
+  const openAddDish = () => {
+    setDishFormMode('add'); setDishFormId(null); setDishFormName(''); setDishFormCategory('mains'); setDishFormDescription(''); setDishFormPrice('0'); setDishFormPrepTime('1'); setDishFormOpen(true);
+  };
+
+  const openEditDish = (dish: MenuItem) => {
+    setDishFormMode('edit'); setDishFormId(dish.id); setDishFormName(dish.name); setDishFormCategory(dish.category === 'beverages' ? 'mains' : dish.category); setDishFormDescription(dish.description); setDishFormPrice(String(dish.price)); setDishFormPrepTime(String(dish.prepTimeDays)); setDishFormOpen(true);
+  };
+
+  const handleDishSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormSaving(true);
+    const result = dishFormMode === 'add'
+      ? await createDish({ name: dishFormName, category: dishFormCategory, price: Number(dishFormPrice), prepTimeDays: Number(dishFormPrepTime), description: dishFormDescription })
+      : await updateDish(Number(dishFormId), { name: dishFormName, category: dishFormCategory, description: dishFormDescription });
+    if (!result.ok) { alert(`Failed to ${dishFormMode === 'add' ? 'add' : 'update'} dish: ${result.error}`); setFormSaving(false); return; }
+    const row = result.menuItem as DatabaseMenuItem;
+    const mapped = mapMenuItem(row, [], ingredients);
+    setMenuItems((current) => dishFormMode === 'add' ? [...current, mapped] : current.map((dish) => dish.id === mapped.id ? { ...dish, ...mapped } : dish));
+    setDishFormOpen(false); setFormSaving(false);
+  };
+
+  const toggleDishAvailability = (dishId: string) => {
+    setUnavailableDishIds((current) => { const next = new Set(current); next.has(dishId) ? next.delete(dishId) : next.add(dishId); return next; });
+  };
+
   const openAddIngredient = () => {
     setFormMode('add');
     setFormId(null);
@@ -615,6 +651,9 @@ export default function InventoryPage() {
             </p>
           </div>
 
+          {activeTab === 'dishes' && (
+            <button type="button" onClick={openAddDish} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90">Add dish</button>
+          )}
           {activeTab === 'ingredients' && (
             <button
               type="button"
@@ -934,9 +973,10 @@ export default function InventoryPage() {
                       className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-muted/50 rounded-lg"
                     >
 
-                      <span className="font-medium text-card-foreground">
-                        {dish.name}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className={`font-medium ${unavailableDishIds.has(dish.id) ? 'text-muted-foreground line-through' : 'text-card-foreground'}`}>{dish.name}</span>
+                        {unavailableDishIds.has(dish.id) && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-800">Unavailable</span>}
+                      </div>
 
                       <div className="flex items-center gap-3">
 
@@ -967,6 +1007,8 @@ export default function InventoryPage() {
                           </span>
                         )}
 
+                        <button type="button" onClick={() => openEditDish(dish)} className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-muted">Edit</button>
+                        <button type="button" onClick={() => toggleDishAvailability(dish.id)} className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-muted">{unavailableDishIds.has(dish.id) ? 'Make available' : 'Make unavailable'}</button>
                       </div>
 
                     </div>
@@ -977,6 +1019,21 @@ export default function InventoryPage() {
 
             </Card>
           </>
+        )}
+
+        {dishFormOpen && (
+          <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-slate-950/75 p-4 backdrop-blur-[2px]">
+            <form onSubmit={handleDishSubmit} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl">
+              <h2 className="text-xl font-bold">{dishFormMode === 'add' ? 'Add dish' : 'Edit dish'}</h2>
+              <div className="mt-5 flex flex-col gap-4">
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Name<input value={dishFormName} onChange={(event) => setDishFormName(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" required /></label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Category<select value={dishFormCategory} onChange={(event) => setDishFormCategory(event.target.value as typeof dishFormCategory)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"><option value="mains">Main</option><option value="appetizers">Appetizers</option><option value="sides">Sides</option><option value="desserts">Dessert</option></select></label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Description<textarea value={dishFormDescription} onChange={(event) => setDishFormDescription(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" rows={3} /></label>
+                {dishFormMode === 'add' && <div className="grid grid-cols-2 gap-3"><label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Price<input type="number" min="0" step="0.01" value={dishFormPrice} onChange={(event) => setDishFormPrice(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" required /></label><label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Prep days<input type="number" min="0" step="1" value={dishFormPrepTime} onChange={(event) => setDishFormPrepTime(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" required /></label></div>}
+              </div>
+              <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setDishFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700">Cancel</button><button type="submit" disabled={formSaving} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">{formSaving ? 'Saving...' : 'Save changes'}</button></div>
+            </form>
+          </div>
         )}
 
         {formOpen && (

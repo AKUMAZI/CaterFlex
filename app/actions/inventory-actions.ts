@@ -71,6 +71,28 @@ export async function updateIngredient(
   return { ok: true as const, ingredient: data };
 }
 
+export async function createDish(input: { name: string; category: string; price: number; prepTimeDays: number; description: string }) {
+  const owner = await requireRole('owner');
+  if (!owner) return { ok: false as const, error: 'Owner access required.' };
+  const name = input.name.trim();
+  if (!name || !Number.isFinite(input.price) || input.price < 0 || !Number.isFinite(input.prepTimeDays) || input.prepTimeDays < 0) {
+    return { ok: false as const, error: 'Enter a valid dish name, price, and prep time.' };
+  }
+  const { data, error } = await createAdminClient().from('MENU_ITEM').insert({ ItemName: name, Category: input.category, Price: input.price, PrepTimeDays: input.prepTimeDays, Description: input.description.trim() }).select('MenuItemID, ItemName, Category, Price, PrepTimeDays, Description').single();
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, menuItem: data };
+}
+
+export async function updateDish(dishId: number, input: { name: string; category: string; description: string }) {
+  const owner = await requireRole('owner');
+  if (!owner) return { ok: false as const, error: 'Owner access required.' };
+  const name = input.name.trim();
+  if (!Number.isFinite(dishId) || !name) return { ok: false as const, error: 'Enter a valid dish name.' };
+  const { data, error } = await createAdminClient().from('MENU_ITEM').update({ ItemName: name, Category: input.category, Description: input.description.trim() }).eq('MenuItemID', dishId).select('MenuItemID, ItemName, Category, Price, PrepTimeDays, Description').single();
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, menuItem: data };
+}
+
 export async function updateIngredientStock(
   ingredientId: number,
   newStock: number
