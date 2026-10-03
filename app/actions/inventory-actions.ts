@@ -93,6 +93,15 @@ export async function updateDish(dishId: number, input: { name: string; category
   return { ok: true as const, menuItem: data };
 }
 
+export async function updateDishAvailability(dishId: number, availability: boolean) {
+  const owner = await requireRole('owner');
+  if (!owner) return { ok: false as const, error: 'Owner access required.' };
+  if (!Number.isFinite(dishId)) return { ok: false as const, error: 'Invalid dish.' };
+  const { error } = await createAdminClient().from('MENU_ITEM').update({ Availability: availability }).eq('MenuItemID', dishId);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, availability };
+}
+
 export async function updateIngredientStock(
   ingredientId: number,
   newStock: number
