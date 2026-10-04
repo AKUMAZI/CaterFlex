@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 
-import { replaceDishIngredients, replaceMenuItemAllergies, updateMenuItem } from '@/app/actions/menu-actions'
+import { createMenuItem, replaceDishIngredients, replaceMenuItemAllergies, updateMenuItem } from '@/app/actions/menu-actions'
 import { supabase } from '@/lib/supabase';
 import type { AllergenType, MenuItem } from '@/lib/types';
 
@@ -654,67 +654,14 @@ export function MenuItemForm({
        * ====================================
        */
       if (!isEditing || !item) {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        
-        console.log('SUPABASE SESSION BEFORE MENU SAVE:', {
-          hasSession: !!session,
-          userId: session?.user?.id ?? null,
-          email: session?.user?.email ?? null,
-        });
-
-        const {
-          data,
-          error,
-        } = await supabase
-          .from('MENU_ITEM')
-          .insert({
-            ItemName:
-              form.name.trim(),
-
-            Category:
-              databaseCategory,
-
-            Price:
-              numericPrice,
-
-            PrepTimeDays:
-              Math.max(
-                0,
-                Number(
-                  form.prepTimeDays
-                ) || 0
-              ),
-
-            Description:
-              form.description.trim(),
-            Availability: form.availability !== false,
-          })
-          .select('MenuItemID')
-          .single();
-
-        if (
-          error ||
-          !data
-        ) {
-          console.error(
-            'MENU_ITEM INSERT ERROR:',
-            error
-          );
-
-          throw new Error(
-            error?.message ??
-              'Unable to create the menu item.'
-          );
-        }
-
-        menuItemId =
-          Number(
-            data.MenuItemID
-          );
-
-          
+        menuItemId = await createMenuItem({
+          ItemName: form.name.trim(),
+          Category: databaseCategory,
+          Price: numericPrice,
+          PrepTimeDays: Math.max(0, Number(form.prepTimeDays) || 0),
+          Description: form.description.trim(),
+          Availability: form.availability !== false,
+        })
       }
 
       /*

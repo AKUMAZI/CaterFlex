@@ -12,6 +12,18 @@ type MenuItemUpdate = {
   Availability: boolean
 }
 
+type MenuItemCreate = MenuItemUpdate
+
+export async function createMenuItem(values: MenuItemCreate) {
+  const user = await requireRole('owner')
+  if (!user) throw new Error('Unauthorized')
+
+  const admin = createAdminClient()
+  const { data, error } = await admin.from('MENU_ITEM').insert(values).select('MenuItemID').single()
+  if (error || !data) throw new Error(error?.message ?? 'Unable to create the menu item.')
+  return Number(data.MenuItemID)
+}
+
 export async function updateMenuItem(menuItemId: number, values: MenuItemUpdate) {
   const user = await requireRole('owner')
   if (!user) throw new Error('Unauthorized')
