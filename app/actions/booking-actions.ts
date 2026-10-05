@@ -4,6 +4,7 @@ import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { validateBooking } from '@/lib/rules/bookingValidation'
 import type { Booking, DayOfWeek, OperatorSettings } from '@/lib/types'
+import { createNotification } from '@/lib/notifications'
 
 const BOOKING_FIELDS = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, AllergenConflictFlag'
 const BOOKING_ITEM_FIELDS = 'BookingItemID, BookingID, MenuItemID, Quantity'
@@ -167,6 +168,10 @@ export async function createBooking(bookingDetails: BookingDetails, items: Booki
   const allergenNamesById = new Map((allergyTags ?? []).map((tag) => [Number(tag.AllergyTagID), String(tag.AllergenName).trim().toLowerCase()]))
   const customerAllergenNames = new Set((customerAllergies ?? []).map((allergy) => allergenNamesById.get(Number(allergy.AllergyTagID))).filter(Boolean))
   const hasAllergenConflict = (menuItemAllergies ?? []).some((allergy) => customerAllergenNames.has(allergenNamesById.get(Number(allergy.AllergyTagID)) ?? ''))
+  const operatorId = 2
+  if (hasAllergenConflict) {
+    await createNotification(operatorId, 'allergen_conflict', `A customer attempted a booking with an allergen conflict.`, {})
+  }
 
   const eventDate = String(bookingDetails.eventDate ?? '').trim()
 const eventTime = String(bookingDetails.eventTime ?? '').trim()
@@ -201,7 +206,6 @@ if (!Number.isFinite(guestCount) || guestCount <= 0) {
   }
 }
 
-const operatorId = 2
 const [{ data: operatorSettingsRow, error: settingsError }, { data: existingBookingRows, error: existingBookingsError }] = await Promise.all([
   admin
     .from('OPERATOR_SETTINGS')
@@ -277,6 +281,7 @@ const validation = validateBooking(
 )
 
 if (!validation.valid) {
+  await createNotification(operatorId, 'capacity_conflict', `A booking attempt for ${eventDate} at ${eventTime} was blocked: ${validation.failures.map((failure) => failure.message).join(' ')}`)
   return { ok: false as const, error: validation.failures.map((failure) => failure.message).join(' ') }
 }
 
@@ -296,6 +301,8 @@ const { data: booking, error } = await admin
   .single()
 
   if (error || !booking) return { ok: false as const, error: error?.message ?? 'Unable to retrieve the booking ID.' }
+
+  await createNotification(operatorId, 'new_booking', `New booking request for ${eventDate} at ${eventTime}.`, { bookingId: booking.BookingID })
 
   const { error: itemError } = await admin.from('BOOKING_ITEM').insert(items.map((item) => ({ BookingID: booking.BookingID, MenuItemID: Number(item.MenuItemID), Quantity: Number(item.Quantity ?? 1) })))
   if (itemError) {

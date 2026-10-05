@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/check-prep-sufficiency",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}
