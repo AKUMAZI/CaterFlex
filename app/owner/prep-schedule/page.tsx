@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { Card } from '@/components/ui/card';
-import { Clock, PackageCheck, Utensils } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Clock, PackageCheck } from 'lucide-react';
 
 import { getOwnerPrepSchedule } from '@/app/actions/booking-actions';
 
@@ -86,6 +87,7 @@ export default function PrepSchedulePage() {
   >([]);
 
   const [loading, setLoading] = useState(true);
+  const [activeSchedule, setActiveSchedule] = useState<'catering' | 'meal-prep'>('catering');
 
   const [error, setError] = useState<string | null>(
     null
@@ -372,11 +374,33 @@ export default function PrepSchedulePage() {
 
         {!loading && !error && (
           <>
+            <div className="flex flex-wrap gap-3" role="group" aria-label="Preparation schedule type">
+              <Button
+                type="button"
+                variant={activeSchedule === 'catering' ? 'default' : 'outline'}
+                onClick={() => setActiveSchedule('catering')}
+                aria-pressed={activeSchedule === 'catering'}
+              >
+                <Clock data-icon="inline-start" />
+                Catering Preparations
+              </Button>
+              <Button
+                type="button"
+                variant={activeSchedule === 'meal-prep' ? 'default' : 'outline'}
+                onClick={() => setActiveSchedule('meal-prep')}
+                aria-pressed={activeSchedule === 'meal-prep'}
+              >
+                <PackageCheck data-icon="inline-start" />
+                Meal Prep
+              </Button>
+            </div>
+
             {/* ==================================================
                 CATERING PREPARATIONS
             ================================================== */}
 
-            <Card className="p-8">
+            {activeSchedule === 'catering' ? (
+              <Card className="p-8">
 
               <div className="flex items-center gap-2 mb-6">
 
@@ -521,12 +545,14 @@ export default function PrepSchedulePage() {
               )}
 
             </Card>
+            ) : null}
 
             {/* ==================================================
                 RECURRING MEAL PREP
             ================================================== */}
 
-            <Card className="p-8">
+            {activeSchedule === 'meal-prep' ? (
+              <Card className="p-8">
 
               <div className="flex items-center gap-2 mb-6">
 
@@ -631,6 +657,7 @@ export default function PrepSchedulePage() {
               )}
 
             </Card>
+            ) : null}
           </>
         )}
 
