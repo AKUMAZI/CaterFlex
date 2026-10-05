@@ -350,6 +350,43 @@ export async function getOwnerBookings() {
   return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [] }
 }
 
+export async function getOwnerPrepSchedule() {
+  const owner = await requireRole('owner')
+  if (!owner) {
+    return { ok: false as const, error: 'Owner access required.', bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  }
+
+  const admin = createAdminClient()
+  const operatorId = Number(owner.id)
+  const [{ data: bookings, error: bookingError }, { data: mealPrepOrders, error: mealPrepError }] = await Promise.all([
+    admin.from('BOOKING').select('BookingID, CustomerID, EventDate, EventTime, Venue, GuestCount, Status').eq('OperatorID', operatorId).eq('Status', 'confirmed'),
+    admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate, Status').eq('OperatorID', operatorId).eq('Status', 'active'),
+  ])
+
+  if (bookingError) return { ok: false as const, error: bookingError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  if (mealPrepError) return { ok: false as const, error: mealPrepError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+
+  const bookingIds = (bookings ?? []).map((booking) => booking.BookingID)
+  const mealPrepOrderIds = (mealPrepOrders ?? []).map((order) => order.MealPrepOrderID)
+  const [{ data: bookingItems, error: bookingItemsError }, { data: mealPrepItems, error: mealPrepItemsError }] = await Promise.all([
+    bookingIds.length > 0 ? admin.from('BOOKING_ITEM').select('BookingItemID, BookingID, MenuItemID, Quantity').in('BookingID', bookingIds) : Promise.resolve({ data: [], error: null }),
+    mealPrepOrderIds.length > 0 ? admin.from('MEAL_PREP_ITEM').select('MealPrepItemID, MealPrepOrderID, MenuItemID, Quantity').in('MealPrepOrderID', mealPrepOrderIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  if (bookingItemsError) return { ok: false as const, error: bookingItemsError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  if (mealPrepItemsError) return { ok: false as const, error: mealPrepItemsError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+
+  const customerIds = Array.from(new Set([...((bookings ?? []).map((booking) => booking.CustomerID)), ...((mealPrepOrders ?? []).map((order) => order.CustomerID))].filter((id): id is number => id !== null)))
+  const menuItemIds = Array.from(new Set([...((bookingItems ?? []).map((item) => item.MenuItemID)), ...((mealPrepItems ?? []).map((item) => item.MenuItemID))]))
+  const [{ data: customers, error: customerError }, { data: menuItems, error: menuItemError }] = await Promise.all([
+    customerIds.length > 0 ? admin.from('CUSTOMER').select('CustomerID, Name').in('CustomerID', customerIds) : Promise.resolve({ data: [], error: null }),
+    menuItemIds.length > 0 ? admin.from('MENU_ITEM').select('MenuItemID, ItemName, PrepTimeDays').in('MenuItemID', menuItemIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  if (customerError) return { ok: false as const, error: customerError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  if (menuItemError) return { ok: false as const, error: menuItemError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+
+  return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [], customers: customers ?? [], menuItems: menuItems ?? [] }
+}
+
 export async function updateBookingStatus(bookingId: number, newStatus: 'confirmed' | 'rejected') {
   const owner = await requireRole('owner')
   if (!owner) return { ok: false as const, error: 'Owner access required.' }

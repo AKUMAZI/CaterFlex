@@ -6,7 +6,7 @@ import { DashboardLayout } from '@/app/dashboard-layout';
 import { Card } from '@/components/ui/card';
 import { Clock, PackageCheck, Utensils } from 'lucide-react';
 
-import { supabase } from '@/lib/supabase';
+import { getOwnerPrepSchedule } from '@/app/actions/booking-actions';
 
 const OPERATOR_ID = 2;
 
@@ -101,195 +101,15 @@ export default function PrepSchedulePage() {
       setError(null);
 
       try {
-        // ========================================================
-        // 1. LOAD CONFIRMED CATERING BOOKINGS
-        // ========================================================
+        const schedule = await getOwnerPrepSchedule();
+        if (!schedule.ok) throw new Error(schedule.error);
 
-        const {
-          data: bookingData,
-          error: bookingError,
-        } = await supabase
-          .from('BOOKING')
-          .select(
-            'BookingID, CustomerID, EventDate, EventTime, Venue, GuestCount, Status'
-          )
-          .eq('OperatorID', OPERATOR_ID)
-          .eq('Status', 'confirmed');
-
-        if (bookingError) {
-          throw bookingError;
-        }
-
-        const bookings =
-          (bookingData ?? []) as Booking[];
-
-        // ========================================================
-        // 2. LOAD CATERING BOOKING ITEMS
-        // ========================================================
-
-        const bookingIds = bookings.map(
-          (booking) => booking.BookingID
-        );
-
-        let bookingItems: BookingItem[] = [];
-
-        if (bookingIds.length > 0) {
-          const {
-            data: bookingItemData,
-            error: bookingItemError,
-          } = await supabase
-            .from('BOOKING_ITEM')
-            .select(
-              'BookingItemID, BookingID, MenuItemID, Quantity'
-            )
-            .in('BookingID', bookingIds);
-
-          if (bookingItemError) {
-            throw bookingItemError;
-          }
-
-          bookingItems =
-            (bookingItemData ?? []) as BookingItem[];
-        }
-
-        // ========================================================
-        // 3. LOAD CONFIRMED MEAL PREP ORDERS
-        // ========================================================
-
-        const {
-          data: mealPrepOrderData,
-          error: mealPrepOrderError,
-        } = await supabase
-          .from('MEAL_PREP_ORDER')
-          .select(
-            'MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate, Status'
-          )
-          .eq('OperatorID', OPERATOR_ID)
-          .eq('Status', 'active');
-
-        if (mealPrepOrderError) {
-          throw mealPrepOrderError;
-        }
-
-        const mealPrepOrders =
-          (mealPrepOrderData ??
-            []) as MealPrepOrder[];
-
-        // ========================================================
-        // 4. LOAD MEAL PREP ITEMS
-        // ========================================================
-
-        const mealPrepOrderIds =
-          mealPrepOrders.map(
-            (order) => order.MealPrepOrderID
-          );
-
-        let mealPrepItems: MealPrepItem[] = [];
-
-        if (mealPrepOrderIds.length > 0) {
-          const {
-            data: mealPrepItemData,
-            error: mealPrepItemError,
-          } = await supabase
-            .from('MEAL_PREP_ITEM')
-            .select(
-              'MealPrepItemID, MealPrepOrderID, MenuItemID, Quantity'
-            )
-            .in(
-              'MealPrepOrderID',
-              mealPrepOrderIds
-            );
-
-          if (mealPrepItemError) {
-            throw mealPrepItemError;
-          }
-
-          mealPrepItems =
-            (mealPrepItemData ??
-              []) as MealPrepItem[];
-        }
-
-        // ========================================================
-        // 5. GET ALL CUSTOMER IDS
-        // ========================================================
-
-        const customerIds = Array.from(
-          new Set(
-            [
-              ...bookings.map(
-                (booking) => booking.CustomerID
-              ),
-              ...mealPrepOrders.map(
-                (order) => order.CustomerID
-              ),
-            ].filter(
-              (id): id is number => id !== null
-            )
-          )
-        );
-
-        // ========================================================
-        // 6. LOAD CUSTOMERS
-        // ========================================================
-
-        let customers: Customer[] = [];
-
-        if (customerIds.length > 0) {
-          const {
-            data: customerData,
-            error: customerError,
-          } = await supabase
-            .from('CUSTOMER')
-            .select('CustomerID, Name')
-            .in('CustomerID', customerIds);
-
-          if (customerError) {
-            throw customerError;
-          }
-
-          customers =
-            (customerData ?? []) as Customer[];
-        }
-
-        // ========================================================
-        // 7. GET ALL MENU ITEM IDS
-        // ========================================================
-
-        const menuItemIds = Array.from(
-          new Set([
-            ...bookingItems.map(
-              (item) => item.MenuItemID
-            ),
-            ...mealPrepItems.map(
-              (item) => item.MenuItemID
-            ),
-          ])
-        );
-
-        // ========================================================
-        // 8. LOAD MENU ITEMS
-        // ========================================================
-
-        let menuItems: MenuItem[] = [];
-
-        if (menuItemIds.length > 0) {
-          const {
-            data: menuItemData,
-            error: menuItemError,
-          } = await supabase
-            .from('MENU_ITEM')
-            .select(
-              'MenuItemID, ItemName, PrepTimeDays'
-            )
-            .in('MenuItemID', menuItemIds);
-
-          if (menuItemError) {
-            throw menuItemError;
-          }
-
-          menuItems =
-            (menuItemData ?? []) as MenuItem[];
-        }
+        const bookings = schedule.bookings as Booking[];
+        const bookingItems = schedule.bookingItems as BookingItem[];
+        const mealPrepOrders = schedule.mealPrepOrders as MealPrepOrder[];
+        const mealPrepItems = schedule.mealPrepItems as MealPrepItem[];
+        const customers = schedule.customers as Customer[];
+        const menuItems = schedule.menuItems as MenuItem[];
 
         // ========================================================
         // 9. BUILD CATERING PREPARATION SCHEDULE
