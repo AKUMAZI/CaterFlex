@@ -485,6 +485,70 @@ export default function MenuPage() {
     }
 
     try {
+      const { data: bookingItems, error: bookingItemsError } = await supabase
+        .from('BOOKING_ITEM')
+        .select('BookingID')
+        .eq('MenuItemID', menuItemId);
+
+      if (bookingItemsError) {
+        throw new Error(bookingItemsError.message);
+      }
+
+      const bookingIds = (bookingItems ?? [])
+        .map((bookingItem) => bookingItem.BookingID)
+        .filter((bookingId): bookingId is number => Number.isFinite(Number(bookingId)));
+
+      if (bookingIds.length > 0) {
+        const { data: referencedBookings, error: bookingsError } = await supabase
+          .from('BOOKING')
+          .select('BookingID, Status')
+          .in('BookingID', bookingIds)
+          .in('Status', ['pending', 'confirmed']);
+
+        if (bookingsError) {
+          throw new Error(bookingsError.message);
+        }
+
+        if ((referencedBookings ?? []).length > 0) {
+          window.alert(
+            'This menu item is used in a pending or confirmed booking and cannot be deleted.'
+          );
+          return;
+        }
+      }
+
+      const { data: mealPrepItems, error: mealPrepItemsError } = await supabase
+        .from('MEAL_PREP_ITEM')
+        .select('MealPrepOrderID')
+        .eq('MenuItemID', menuItemId);
+
+      if (mealPrepItemsError) {
+        throw new Error(mealPrepItemsError.message);
+      }
+
+      const mealPrepOrderIds = (mealPrepItems ?? [])
+        .map((mealPrepItem) => mealPrepItem.MealPrepOrderID)
+        .filter((orderId): orderId is number => Number.isFinite(Number(orderId)));
+
+      if (mealPrepOrderIds.length > 0) {
+        const { data: referencedMealPrepOrders, error: mealPrepOrdersError } = await supabase
+          .from('MEAL_PREP_ORDER')
+          .select('MealPrepOrderID, Status')
+          .in('MealPrepOrderID', mealPrepOrderIds)
+          .in('Status', ['pending', 'active']);
+
+        if (mealPrepOrdersError) {
+          throw new Error(mealPrepOrdersError.message);
+        }
+
+        if ((referencedMealPrepOrders ?? []).length > 0) {
+          window.alert(
+            'This menu item is used in a pending or active meal-prep order and cannot be deleted.'
+          );
+          return;
+        }
+      }
+
       /*
        * Remove allergen relationships.
        */
