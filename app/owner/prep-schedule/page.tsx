@@ -487,6 +487,16 @@ export default function PrepSchedulePage() {
           b.prepStartDate.getTime()
       );
 
+  const scheduledMealPrep = [...mealPrep].sort((a, b) => {
+    const dateA = a.nextFulfillmentDate
+      ? new Date(`${a.nextFulfillmentDate}T00:00:00`).getTime()
+      : Number.POSITIVE_INFINITY;
+    const dateB = b.nextFulfillmentDate
+      ? new Date(`${b.nextFulfillmentDate}T00:00:00`).getTime()
+      : Number.POSITIVE_INFINITY;
+    return dateA - dateB;
+  });
+
   // ============================================================
   // PAGE
   // ============================================================
@@ -715,10 +725,9 @@ export default function PrepSchedulePage() {
 
               </div>
 
-              {mealPrep.length > 0 ? (
+              {scheduledMealPrep.length > 0 ? (
                 <div className="space-y-4">
-
-                  {mealPrep.map((item) => (
+                  {scheduledMealPrep.map((item) => (
                     <div
                       key={item.id}
                       className="p-4 rounded-lg border-2 border-border bg-muted/50"
