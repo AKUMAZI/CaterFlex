@@ -27,6 +27,12 @@ type MealPrepOrderDetails = {
   guestCount?: number
 }
 
+function addDaysToDate(date: Date, days: number) {
+  const nextDate = new Date(date)
+  nextDate.setDate(nextDate.getDate() + days)
+  return nextDate.toISOString().slice(0, 10)
+}
+
 export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, items: BookingItemInput[]) {
   const customer = await requireRole('customer')
   if (!customer) return { ok: false as const, error: 'Customer access required.' }
@@ -60,6 +66,7 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
   const hasAllergenConflict = (menuItemAllergies ?? []).some((allergy) => customerAllergenNames.has(allergenNamesById.get(Number(allergy.AllergyTagID)) ?? ''))
   const mealsPerCycle = Number(orderDetails.guestCount ?? 0)
   const recurrencePattern = String(orderDetails.mealPrepFrequency ?? 'weekly').trim() || 'weekly'
+  const nextFulfillmentDate = addDaysToDate(new Date(), recurrencePattern === 'biweekly' ? 14 : 7)
 
   if (!Number.isFinite(mealsPerCycle) || mealsPerCycle <= 0) {
     return { ok: false as const, error: 'Meals per cycle must be greater than 0.' }
@@ -77,6 +84,7 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
       MealsPerCycle: mealsPerCycle,
       Status: 'pending',
       AllergenConflictFlag: hasAllergenConflict,
+      NextFulfillmentDate: nextFulfillmentDate,
     })
     .select('MealPrepOrderID')
     .single()
@@ -102,7 +110,7 @@ export async function getCustomerMealPrepOrders() {
   const admin = createAdminClient()
   const { data: orders, error } = await admin
     .from('MEAL_PREP_ORDER')
-    .select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status, AllergenConflictFlag')
+    .select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status, AllergenConflictFlag, NextFulfillmentDate')
     .eq('CustomerID', Number(customer.id))
     .order('MealPrepOrderID', { ascending: false })
   if (error) return { ok: false as const, error: error.message, orders: [], items: [] }

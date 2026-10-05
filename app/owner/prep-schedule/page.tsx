@@ -43,6 +43,7 @@ type MealPrepOrder = {
   CustomerID: number | null;
   RecurrencePattern: string | null;
   MealsPerCycle: number | null;
+  NextFulfillmentDate: string | null;
   Status: string | null;
 };
 
@@ -71,6 +72,7 @@ type MealPrepDisplayItem = {
   customerName: string;
   recurrencePattern: string;
   mealsPerCycle: number;
+  nextFulfillmentDate: string | null;
   quantity: number;
 };
 
@@ -160,10 +162,10 @@ export default function PrepSchedulePage() {
         } = await supabase
           .from('MEAL_PREP_ORDER')
           .select(
-            'MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, Status'
+            'MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate, Status'
           )
           .eq('OperatorID', OPERATOR_ID)
-          .eq('Status', 'confirmed');
+          .eq('Status', 'active');
 
         if (mealPrepOrderError) {
           throw mealPrepOrderError;
@@ -429,6 +431,9 @@ export default function PrepSchedulePage() {
                 Number(
                   order.MealsPerCycle ?? 0
                 ),
+
+              nextFulfillmentDate:
+                order.NextFulfillmentDate,
 
               quantity:
                 mealPrepItem.Quantity,
@@ -758,6 +763,13 @@ export default function PrepSchedulePage() {
                               ? 'meal'
                               : 'meals'}{' '}
                             per cycle
+                          </p>
+
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Next fulfillment:{' '}
+                            {item.nextFulfillmentDate
+                              ? new Date(`${item.nextFulfillmentDate}T00:00:00`).toLocaleDateString()
+                              : 'Not scheduled'}
                           </p>
 
                         </div>

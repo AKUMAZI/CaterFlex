@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
 
   let checked = 0
   let notified = 0
+  let mealPrepChecked = 0
+  let mealPrepNotified = 0
   for (const booking of bookings ?? []) {
     const { data: items } = await admin.from('BOOKING_ITEM').select('MenuItemID, Quantity').eq('BookingID', booking.BookingID)
     for (const item of items ?? []) {
@@ -46,5 +48,40 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, checked, notified })
+  const { data: mealPrepOrders, error: mealPrepError } = await admin
+    .from('MEAL_PREP_ORDER')
+    .select('MealPrepOrderID, OperatorID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate')
+    .eq('Status', 'active')
+    .not('NextFulfillmentDate', 'is', null)
+    .lte('NextFulfillmentDate', today.toISOString().slice(0, 10))
+  if (mealPrepError) return NextResponse.json({ error: mealPrepError.message }, { status: 500 })
+
+  for (const order of mealPrepOrders ?? []) {
+    const { data: items } = await admin
+      .from('MEAL_PREP_ITEM')
+      .select('MenuItemID, Quantity')
+      .eq('MealPrepOrderID', order.MealPrepOrderID)
+
+    for (const item of items ?? []) {
+      const result = await checkSufficiency(Number(item.MenuItemID), Number(item.Quantity ?? order.MealsPerCycle ?? 1))
+      mealPrepChecked += 1
+      const type = result.sufficient ? 'prep_start_confirmed' : 'insufficient_ingredients'
+      const metadata = { mealPrepOrderId: Number(order.MealPrepOrderID) }
+      if (await hasNotificationForToday(Number(order.OperatorID), type, metadata)) continue
+      const message = result.sufficient
+        ? `Preparation can start for meal prep order ${order.MealPrepOrderID}.`
+        : `Insufficient ingredients for meal prep order ${order.MealPrepOrderID}: ${result.shortfalls.map((shortfall) => `${shortfall.ingredientName} short by ${shortfall.shortBy} ${shortfall.unitOfMeasure}`).join(', ')}.`
+      if (await createNotification(Number(order.OperatorID), type, message, metadata)) mealPrepNotified += 1
+    }
+
+    const nextDate = new Date(`${order.NextFulfillmentDate}T00:00:00`)
+    nextDate.setDate(nextDate.getDate() + (order.RecurrencePattern === 'biweekly' ? 14 : 7))
+    const { error: updateError } = await admin
+      .from('MEAL_PREP_ORDER')
+      .update({ NextFulfillmentDate: nextDate.toISOString().slice(0, 10) })
+      .eq('MealPrepOrderID', order.MealPrepOrderID)
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true, checked, notified, mealPrepChecked, mealPrepNotified })
 }
