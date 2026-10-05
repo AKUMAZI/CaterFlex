@@ -7,7 +7,11 @@ type BookingSection = 'all' | 'catering' | 'meal_prep';
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { getCustomersByIds } from '@/app/actions/auth';
 import { supabase } from '@/lib/supabase';
-import { getOwnerBookings, updateBookingStatus as updateBookingStatusAction } from '@/app/actions/booking-actions';
+import {
+  getOwnerBookings,
+  updateBookingStatus as updateBookingStatusAction,
+  updateMealPrepOrderStatus as updateMealPrepOrderStatusAction,
+} from '@/app/actions/booking-actions';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -73,6 +77,7 @@ type MenuItem = {
 };
 
 type BookingDisplay = Booking & {
+  mealPrepOrderId?: number;
   customer: Customer | null;
   items: {
     name: string;
@@ -99,6 +104,12 @@ const statusConfig: Record<
 
   confirmed: {
     label: 'Confirmed',
+    className: 'bg-green-100 text-green-800',
+    icon: CheckCircle2,
+  },
+
+  active: {
+    label: 'Active',
     className: 'bg-green-100 text-green-800',
     icon: CheckCircle2,
   },
@@ -270,6 +281,7 @@ export default function BookingsPage() {
 
           return {
             BookingID: -Math.abs(order.MealPrepOrderID),
+            mealPrepOrderId: order.MealPrepOrderID,
             CustomerID: order.CustomerID,
             OperatorID: order.OperatorID,
             EventDate: null,
@@ -361,6 +373,41 @@ export default function BookingsPage() {
           ? error.message
           : 'An unexpected error occurred.'
       );
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const updateMealPrepOrderStatus = async (
+    mealPrepOrderId: number,
+    status: 'active' | 'rejected'
+  ) => {
+    if (updatingId !== null) {
+      return;
+    }
+
+    const displayId = -Math.abs(mealPrepOrderId);
+    setUpdatingId(displayId);
+
+    try {
+      const result = await updateMealPrepOrderStatusAction(mealPrepOrderId, status);
+
+      if (!result.ok) {
+        console.error('MEAL PREP STATUS UPDATE ERROR:', result.error);
+        alert(`Failed to ${status === 'active' ? 'confirm' : 'reject'} meal-prep order: ${result.error}`);
+        return;
+      }
+
+      setBookings((current) =>
+        current.map((booking) =>
+          booking.mealPrepOrderId === mealPrepOrderId
+            ? { ...booking, Status: status }
+            : booking
+        )
+      );
+    } catch (error) {
+      console.error('Unexpected meal-prep status error:', error);
+      alert(error instanceof Error ? error.message : 'An unexpected error occurred.');
     } finally {
       setUpdatingId(null);
     }
@@ -955,12 +1002,17 @@ export default function BookingsPage() {
                                       {/* CONFIRM */}
 
                                       <Button
-                                        onClick={() =>
-                                          updateBookingStatus(
-                                            booking.BookingID,
-                                            'confirmed'
-                                          )
-                                        }
+onClick={() =>
+                                  booking.OrderType === 'meal_prep'
+                                    ? updateMealPrepOrderStatus(
+                                        booking.mealPrepOrderId!,
+                                        'active'
+                                      )
+                                    : updateBookingStatus(
+                                        booking.BookingID,
+                                        'confirmed'
+                                      )
+                                }
                                         disabled={
                                           updatingId ===
                                           booking.BookingID
@@ -969,21 +1021,28 @@ export default function BookingsPage() {
                                       >
                                         <Check className="w-4 h-4" />
 
-                                        {updatingId ===
-                                        booking.BookingID
-                                          ? 'Updating...'
-                                          : 'Confirm Booking'}
+{updatingId ===
+                                    booking.BookingID
+                                  ? 'Updating...'
+                                  : booking.OrderType === 'meal_prep'
+                                    ? 'Confirm Order'
+                                    : 'Confirm Booking'}
                                       </Button>
 
                                       {/* REJECT */}
 
                                       <Button
-                                        onClick={() =>
-                                          updateBookingStatus(
-                                            booking.BookingID,
-                                            'rejected'
-                                          )
-                                        }
+onClick={() =>
+                                  booking.OrderType === 'meal_prep'
+                                    ? updateMealPrepOrderStatus(
+                                        booking.mealPrepOrderId!,
+                                        'rejected'
+                                      )
+                                    : updateBookingStatus(
+                                        booking.BookingID,
+                                        'rejected'
+                                      )
+                                }
                                         disabled={
                                           updatingId ===
                                           booking.BookingID

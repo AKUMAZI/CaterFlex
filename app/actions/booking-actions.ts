@@ -348,3 +348,26 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
   if (error) return { ok: false as const, error: error.message }
   return { ok: true as const }
 }
+
+export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStatus: 'active' | 'rejected') {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.' }
+
+  const admin = createAdminClient()
+  const { data: mealPrepOrder, error: fetchError } = await admin
+    .from('MEAL_PREP_ORDER')
+    .select('MealPrepOrderID, OperatorID')
+    .eq('MealPrepOrderID', mealPrepOrderId)
+    .maybeSingle()
+  if (fetchError) return { ok: false as const, error: fetchError.message }
+  if (!mealPrepOrder || mealPrepOrder.OperatorID !== Number(owner.id)) {
+    return { ok: false as const, error: 'You are not authorized to update this meal-prep order.' }
+  }
+
+  const { error } = await admin
+    .from('MEAL_PREP_ORDER')
+    .update({ Status: newStatus })
+    .eq('MealPrepOrderID', mealPrepOrderId)
+  if (error) return { ok: false as const, error: error.message }
+  return { ok: true as const }
+}
