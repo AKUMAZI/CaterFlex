@@ -2,6 +2,8 @@
 
 import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { validateBooking } from '@/lib/rules/bookingValidation'
+import type { Booking, DayOfWeek, OperatorSettings } from '@/lib/types'
 
 const BOOKING_FIELDS = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, AllergenConflictFlag'
 const BOOKING_ITEM_FIELDS = 'BookingItemID, BookingID, MenuItemID, Quantity'
@@ -197,6 +199,85 @@ if (!Number.isFinite(guestCount) || guestCount <= 0) {
     ok: false as const,
     error: 'Guest count must be greater than 0.',
   }
+}
+
+const operatorId = 2
+const [{ data: operatorSettingsRow, error: settingsError }, { data: existingBookingRows, error: existingBookingsError }] = await Promise.all([
+  admin
+    .from('OPERATOR_SETTINGS')
+    .select('OperatorID, DayOfWeek, OperatingStartTime, OperatingEndTime, MaxCateringEventsPerDay, MaxMealPrepOrdersPerDay, MaxGuestCountPerEvent')
+    .eq('OperatorID', operatorId),
+  admin
+    .from('BOOKING')
+    .select('BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status')
+    .eq('EventDate', eventDate)
+    .in('Status', ['pending', 'confirmed']),
+])
+
+if (settingsError) return { ok: false as const, error: settingsError.message }
+if (existingBookingsError) return { ok: false as const, error: existingBookingsError.message }
+if (!operatorSettingsRow?.length) return { ok: false as const, error: 'Operator booking settings are unavailable.' }
+
+const maxEventsPerDay = {} as OperatorSettings['maxEventsPerDay']
+const maxMealPrepFulfillmentsPerDay = {} as OperatorSettings['maxMealPrepFulfillmentsPerDay']
+
+for (const row of operatorSettingsRow) {
+  const day = Number(row.DayOfWeek) as DayOfWeek
+  maxEventsPerDay[day] = Number(row.MaxCateringEventsPerDay ?? 0)
+  maxMealPrepFulfillmentsPerDay[day] = Number(row.MaxMealPrepOrdersPerDay ?? 0)
+}
+
+const settings: OperatorSettings = {
+  operatingDays: Object.keys(maxEventsPerDay).map(Number) as DayOfWeek[],
+  operatingHoursStart: String(operatorSettingsRow[0].OperatingStartTime),
+  operatingHoursEnd: String(operatorSettingsRow[0].OperatingEndTime),
+  maxEventsPerDay,
+  maxGuestsPerEvent: Number(operatorSettingsRow[0].MaxGuestCountPerEvent),
+  maxMealPrepFulfillmentsPerDay,
+}
+
+const candidateBooking = {
+  id: 'new-booking',
+  customerId: String(customerId),
+  customerName: '',
+  customerEmail: '',
+  orderType: 'catering',
+  eventDate,
+  eventTime,
+  eventType: '',
+  venue,
+  guestCount,
+  specialRequests: '',
+  status: 'pending',
+  selectedMenuItemIds: selectedMenuItemIds.map(String),
+  dietaryRestrictions: [],
+  eventProfileId: '',
+  totalCost: 0,
+  paymentsReceived: 0,
+  createdAt: new Date().toISOString(),
+  validationPassed: false,
+  ruleViolations: [],
+} satisfies Booking
+
+const validation = validateBooking(
+  candidateBooking,
+  settings,
+  (existingBookingRows ?? []).map((row) => ({
+    ...candidateBooking,
+    id: String(row.BookingID),
+    customerId: String(row.CustomerID),
+    eventDate: String(row.EventDate),
+    eventTime: String(row.EventTime),
+    venue: String(row.Venue),
+    guestCount: Number(row.GuestCount),
+    status: String(row.Status) as Booking['status'],
+  })),
+  [],
+  [],
+)
+
+if (!validation.valid) {
+  return { ok: false as const, error: validation.failures.map((failure) => failure.message).join(' ') }
 }
 
 const { data: booking, error } = await admin
