@@ -401,6 +401,44 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
   return { ok: true as const }
 }
 
+async function updateCustomerMealPrepStatus(mealPrepOrderId: number, expectedStatuses: string[], nextStatus: 'active' | 'paused' | 'cancelled') {
+  const customer = await requireRole('customer')
+  if (!customer) return { ok: false as const, error: 'Customer access required.' }
+
+  const admin = createAdminClient()
+  const { data: mealPrepOrder, error: fetchError } = await admin
+    .from('MEAL_PREP_ORDER')
+    .select('MealPrepOrderID, CustomerID, Status')
+    .eq('MealPrepOrderID', mealPrepOrderId)
+    .maybeSingle()
+  if (fetchError) return { ok: false as const, error: fetchError.message }
+  if (!mealPrepOrder || mealPrepOrder.CustomerID !== Number(customer.id)) {
+    return { ok: false as const, error: 'You are not authorized to update this meal-prep order.' }
+  }
+  if (!expectedStatuses.includes(String(mealPrepOrder.Status))) {
+    return { ok: false as const, error: `This meal-prep order cannot be ${nextStatus}.` }
+  }
+
+  const { error } = await admin
+    .from('MEAL_PREP_ORDER')
+    .update({ Status: nextStatus })
+    .eq('MealPrepOrderID', mealPrepOrderId)
+  if (error) return { ok: false as const, error: error.message }
+  return { ok: true as const }
+}
+
+export async function pauseMealPrepOrder(mealPrepOrderId: number) {
+  return updateCustomerMealPrepStatus(mealPrepOrderId, ['active'], 'paused')
+}
+
+export async function resumeMealPrepOrder(mealPrepOrderId: number) {
+  return updateCustomerMealPrepStatus(mealPrepOrderId, ['paused'], 'active')
+}
+
+export async function cancelMealPrepOrder(mealPrepOrderId: number) {
+  return updateCustomerMealPrepStatus(mealPrepOrderId, ['active', 'paused'], 'cancelled')
+}
+
 export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStatus: 'active' | 'rejected') {
   const owner = await requireRole('owner')
   if (!owner) return { ok: false as const, error: 'Owner access required.' }
