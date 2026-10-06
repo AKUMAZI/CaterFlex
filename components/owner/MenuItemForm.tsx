@@ -6,7 +6,13 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 
-import { createMenuItem, replaceDishIngredients, replaceMenuItemAllergies, updateMenuItem } from '@/app/actions/menu-actions'
+import {
+  createMenuItem,
+  replaceDishIngredients,
+  replaceMenuItemAllergies,
+  updateMenuItem,
+  uploadMenuItemPhoto,
+} from '@/app/actions/menu-actions'
 import { supabase } from '@/lib/supabase';
 import type { AllergenType, MenuItem } from '@/lib/types';
 
@@ -163,6 +169,12 @@ export function MenuItemForm({
   const [errorMessage, setErrorMessage] =
     useState('');
 
+  const [selectedPhoto, setSelectedPhoto] =
+    useState<File | null>(null);
+
+  const [photoPreview, setPhotoPreview] =
+    useState('');
+
   const isEditing = Boolean(item);
 
   /*
@@ -196,6 +208,8 @@ export function MenuItemForm({
 
       setIngredientId('');
       setIngredientQty('');
+      setSelectedPhoto(null);
+      setPhotoPreview(item?.photoUrl ?? '');
 
       try {
         /*
@@ -772,6 +786,31 @@ export function MenuItemForm({
 
       /*
        * ====================================
+       * SAVE MENU PHOTO
+       * ====================================
+       */
+      if (selectedPhoto) {
+        try {
+          await uploadMenuItemPhoto(
+            menuItemId,
+            selectedPhoto
+          );
+        } catch (error) {
+          console.error(
+            'MENU PHOTO UPLOAD ERROR:',
+            error
+          );
+
+          throw new Error(
+            error instanceof Error
+              ? error.message
+              : 'Unable to upload the menu photo.'
+          );
+        }
+      }
+
+      /*
+       * ====================================
        * SUCCESS
        * ====================================
        *
@@ -983,6 +1022,74 @@ export function MenuItemForm({
                   }
                   className={inputClass}
                 />
+              </div>
+            </div>
+
+
+            {/* MENU PHOTO */}
+            <div>
+              <p className="text-sm font-medium text-card-foreground mb-3">
+                Menu Photo
+              </p>
+
+              <div className="rounded-xl border border-border bg-muted/20 p-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="flex h-32 w-full items-center justify-center overflow-hidden rounded-lg border border-border bg-muted sm:w-40">
+                    {photoPreview ? (
+                      <img
+                        src={photoPreview}
+                        alt={form.name ? `${form.name} preview` : 'Menu preview'}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="px-3 text-center text-sm text-muted-foreground">
+                        No photo selected
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-1 flex-col gap-2">
+                    <p className="text-sm font-medium text-card-foreground">
+                      Add a photo
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      JPG, PNG, or WebP. Maximum 5 MB.
+                    </p>
+
+                    <label className="inline-flex w-fit cursor-pointer items-center rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-card-foreground transition hover:bg-muted">
+                      Choose Photo
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+
+                          if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+                            setErrorMessage('Please select a JPG, PNG, or WebP image.');
+                            return;
+                          }
+
+                          if (file.size > 5 * 1024 * 1024) {
+                            setErrorMessage('Photo must be 5 MB or smaller.');
+                            return;
+                          }
+
+                          setSelectedPhoto(file);
+                          setPhotoPreview(URL.createObjectURL(file));
+                          setErrorMessage('');
+                        }}
+                      />
+                    </label>
+
+                    {selectedPhoto && (
+                      <p className="text-xs text-muted-foreground">
+                        Selected: {selectedPhoto.name}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

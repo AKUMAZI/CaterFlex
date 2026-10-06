@@ -69,3 +69,71 @@ export async function replaceDishIngredients(menuItemId: number, rows: DishIngre
   const { error: insertError } = await admin.from('DISH_INGREDIENT').insert(rows)
   if (insertError) throw new Error(insertError.message)
 }
+
+export async function uploadMenuItemPhoto(
+  menuItemId: number,
+  file: File
+) {
+  const user = await requireRole('owner')
+
+  if (!user) {
+    throw new Error('Unauthorized')
+  }
+
+  if (!file || file.size === 0) {
+    throw new Error('No photo was selected.')
+  }
+
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Please upload an image file.')
+  }
+
+  // 5 MB maximum
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Photo must be 5 MB or smaller.')
+  }
+
+  const admin = createAdminClient()
+
+  const extension =
+    file.name.split('.').pop()?.toLowerCase() || 'jpg'
+
+  const filePath =
+    `${menuItemId}/${crypto.randomUUID()}.${extension}`
+
+  const { error: uploadError } = await admin.storage
+    .from('menu-images')
+    .upload(filePath, file, {
+      contentType: file.type,
+      upsert: false,
+    })
+
+  if (uploadError) {
+    throw new Error(
+      `Unable to upload menu photo: ${uploadError.message}`
+    )
+  }
+
+  const {
+    data: publicUrlData,
+  } = admin.storage
+    .from('menu-images')
+    .getPublicUrl(filePath)
+
+  const photoUrl = publicUrlData.publicUrl
+
+  const { error: updateError } = await admin
+    .from('MENU_ITEM')
+    .update({
+      PhotoURL: photoUrl,
+    })
+    .eq('MenuItemID', menuItemId)
+
+  if (updateError) {
+    throw new Error(
+      `Photo uploaded but could not save its URL: ${updateError.message}`
+    )
+  }
+
+  return photoUrl
+}

@@ -42,6 +42,8 @@ export interface MenuItem {
   price: number;
   prepTimeDays: number;
   availability?: boolean;
+  photoUrl?: string;
+  
   macros: {
     carbs: number;
     protein: number;

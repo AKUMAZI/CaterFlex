@@ -17,12 +17,6 @@ import {
 } from '@/lib/rules/allergenFiltering';
 import type { MenuItem } from '@/lib/types';
 
-const menuPlaceholderImages = [
-  '/food-placeholder-1.png',
-  '/food-placeholder-2.png',
-  '/food-placeholder-3.png',
-  '/food-placeholder-4.png',
-];
 
 export default function BrowsePage() {
   const router = useRouter();
@@ -55,16 +49,11 @@ export default function BrowsePage() {
 
         // Get menu items
         const { data: menuData, error: menuError } = await supabase
-          .from('MENU_ITEM')
-          .select(`
-            MenuItemID,
-            ItemName,
-            Category,
-            Price,
-            PrepTimeDays,
-            Description
-          `)
-          .order('MenuItemID');
+        .from('MENU_ITEM')
+        .select(
+          'MenuItemID, ItemName, Category, Price, PrepTimeDays, Description, PhotoURL'
+        )
+        .order('MenuItemID');
 
         if (menuError) {
           console.error('MENU_ITEM loading error:', menuError);
@@ -121,43 +110,60 @@ export default function BrowsePage() {
         }
 
         // Convert database menu items into application's MenuItem format
-        const formattedItems: MenuItem[] = (menuData ?? []).map((item) => {
-          const itemAllergyRelations = (allergyRelations ?? []).filter(
-            (relation) => relation.MenuItemID === item.MenuItemID
-          );
-
-          const itemAllergyNames = itemAllergyRelations
-            .map((relation) => {
-              const allergyTag = (allergyTags ?? []).find(
-                (tag) => tag.AllergyTagID === relation.AllergyTagID
+        const formattedItems: MenuItem[] = (menuData ?? []).map(
+          (item: {
+            MenuItemID: number;
+            ItemName: string;
+            Category: string;
+            Price: number;
+            PrepTimeDays: number;
+            Description: string | null;
+            PhotoURL: string | null;
+          }) => {
+            const itemAllergyRelations =
+              (allergyRelations ?? []).filter(
+                (relation) =>
+                  relation.MenuItemID === item.MenuItemID
               );
-
-              return allergyTag?.AllergenName;
-            })
-            .filter((name): name is string => Boolean(name));
-
-          return {
-            id: String(item.MenuItemID),
-            name: item.ItemName,
-            description: item.Description ?? '',
-            category: item.Category ?? '',
-            price: Number(item.Price ?? 0),
-            prepTimeDays: Number(item.PrepTimeDays ?? 0),
-            allergyTags: itemAllergyNames as MenuItem['allergyTags'],
-
-            // These are not currently stored in MENU_ITEM.
-            // Keep the existing application defaults.
-            macros: {
-              calories: 0,
-              protein: 0,
-              carbs: 0,
-              fat: 0,
-            },
-
-            requiredIngredients: [],
-            inventoryStatus: 'available',
-          };
-        });
+        
+            const itemAllergyNames = itemAllergyRelations
+              .map((relation) => {
+                const allergyTag = (allergyTags ?? []).find(
+                  (tag) =>
+                    tag.AllergyTagID === relation.AllergyTagID
+                );
+        
+                return allergyTag?.AllergenName;
+              })
+              .filter(
+                (name): name is string => Boolean(name)
+              );
+        
+            return {
+              id: String(item.MenuItemID),
+              name: item.ItemName,
+              description: item.Description ?? '',
+              category: item.Category as MenuItem['category'],
+              price: Number(item.Price ?? 0),
+              prepTimeDays: Number(item.PrepTimeDays ?? 0),
+        
+              // IMPORTANT: this is the uploaded Supabase photo
+              photoUrl: item.PhotoURL ?? undefined,
+        
+              allergyTags:
+                itemAllergyNames as MenuItem['allergyTags'],
+        
+              macros: {
+                carbs: 0,
+                protein: 0,
+                fat: 0,
+              },
+        
+              requiredIngredients: [],
+              inventoryStatus: 'available',
+            };
+          }
+        );
 
         console.log('Loaded menu items:', formattedItems);
 
@@ -546,15 +552,20 @@ export default function BrowsePage() {
                     }
                   >
                     <div className="relative mb-5 overflow-hidden rounded-xl">
-                      <Image
-                        src={menuPlaceholderImages[Number(item.id) % menuPlaceholderImages.length]}
-                        alt={`${item.name} food placeholder`}
-                        width={720}
-                        height={480}
-                        className="h-44 w-full object-cover transition-transform duration-300 hover:scale-105"
-                      />
+                      {item.photoUrl ? (
+                        <img
+                          src={item.photoUrl}
+                          alt={`${item.name} food`}
+                          className="h-44 w-full object-cover transition-transform duration-300 hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-44 w-full items-center justify-center bg-muted text-sm text-muted-foreground">
+                          No photo available
+                        </div>
+                      )}
+
                       <span className="absolute bottom-3 left-3 rounded-full bg-card/90 px-3 py-1 text-xs font-medium text-card-foreground backdrop-blur-sm">
-                        {item.category || 'Chef&apos;s selection'}
+                        {item.category || "Chef's selection"}
                       </span>
                     </div>
 

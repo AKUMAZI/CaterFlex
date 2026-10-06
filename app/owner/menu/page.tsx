@@ -27,6 +27,7 @@ interface DbMenuItem {
   Price: number;
   PrepTimeDays: number;
   Description: string | null;
+  PhotoURL: string | null;
 }
 
 interface DbIngredient {
@@ -88,7 +89,7 @@ export default function MenuPage() {
       } = await supabase
         .from('MENU_ITEM')
         .select(
-          'MenuItemID, ItemName, Category, Price, PrepTimeDays, Description'
+          'MenuItemID, ItemName, Category, Price, PrepTimeDays, Description, PhotoURL'
         )
         .order('MenuItemID');
 
@@ -346,11 +347,14 @@ export default function MenuPage() {
             id: String(
               menu.MenuItemID
             ),
-
+          
             name: menu.ItemName,
-
+          
             description:
               menu.Description ?? '',
+          
+            photoUrl:
+              menu.PhotoURL ?? undefined,
 
             category:
               menu.Category
@@ -732,7 +736,20 @@ export default function MenuPage() {
                             }
                             className="p-6 border border-border rounded-xl"
                           >
-
+                          {/* MENU PHOTO */}
+                          <div className="mb-5 overflow-hidden rounded-xl border border-border bg-muted">
+                            {item.photoUrl ? (
+                              <img
+                                src={item.photoUrl}
+                                alt={item.name}
+                                className="h-48 w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+                                No photo
+                              </div>
+                            )}
+                          </div>
                             {/* ITEM HEADER */}
                             <div className="flex items-start justify-between gap-4">
                               <h3 className="text-lg font-semibold text-card-foreground">

@@ -44,7 +44,10 @@ function formatNumber(value: number) {
 }
 
 function formatPrice(value: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
+  return new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+  }).format(value)
 }
 
 function getStatus(ingredients: IngredientRow[]): MenuStatus {
