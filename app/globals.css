@@ -100,7 +100,7 @@
   /* Landing / legacy shell */
   --background: #7B2525;
   --foreground: #FFFFFF;
-  --brand: #7B2525;
+  --brand: #6E2020;
   /* Cream dashboard surface */
   --surface: #EEE0CC;
   --surface-foreground: #3D3630;
@@ -111,9 +111,9 @@
   --card-muted-foreground: #6B635B;
   --popover: #FAF6F0;
   --popover-foreground: #3D3630;
-  --primary: #BA6A4C;
+  --primary: #C56B4A;
   --primary-foreground: #FFFFFF;
-  --secondary: #607456;
+  --secondary: #70805D;
   --secondary-foreground: #FFFFFF;
   --muted: #E8DFD0;
   --muted-foreground: #6B635B;
@@ -143,7 +143,7 @@
   color-scheme: dark;
   --background: #7B2525;
   --foreground: #FFFFFF;
-  --brand: #7B2525;
+  --brand: #6E2020;
   --surface: #EEE0CC;
   --surface-foreground: #3D3630;
   --surface-muted-foreground: #6B635B;
@@ -152,9 +152,9 @@
   --card-muted-foreground: #6B635B;
   --popover: #FAF6F0;
   --popover-foreground: #3D3630;
-  --primary: #BA6A4C;
+  --primary: #C56B4A;
   --primary-foreground: #FFFFFF;
-  --secondary: #607456;
+  --secondary: #70805D;
   --secondary-foreground: #FFFFFF;
   --muted: #E8DFD0;
   --muted-foreground: #6B635B;

@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { CustomerShell } from '@/app/customer/customer-shell';
 import { useAppState } from '@/lib/state';
 import { useRouter } from 'next/navigation';
@@ -8,13 +9,20 @@ import { Button } from '@/components/ui/button';
 import { Check, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { createBooking } from '@/app/actions/booking-actions';
+import { createBooking, createMealPrepOrder } from '@/app/actions/booking-actions';
 import { getCustomerAllergies } from '@/app/actions/allergy-actions';
 import {
   checkAllergenConflict,
   getUniqueConflictingAllergens,
 } from '@/lib/rules/allergenFiltering';
 import type { MenuItem } from '@/lib/types';
+
+const menuPlaceholderImages = [
+  '/food-placeholder-1.png',
+  '/food-placeholder-2.png',
+  '/food-placeholder-3.png',
+  '/food-placeholder-4.png',
+];
 
 export default function BrowsePage() {
   const router = useRouter();
@@ -27,6 +35,7 @@ export default function BrowsePage() {
     selectMenuItem,
     deselectMenuItem,
     customerBookingDraft,
+    customerOrderType,
     clearCustomerSession,
   } = useAppState();
 
@@ -325,27 +334,42 @@ export default function BrowsePage() {
         return;
       }
 
-      const result = await createBooking(
-        {
-          ...customerBookingDraft,
-          eventDate,
-          eventTime,
-          venue,
-          guestCount,
-        },
-        validMenuItemIds.map((menuItemId) => ({
-          MenuItemID: Number(menuItemId),
-          Quantity: 1,
-        }))
-      );
+      const selectedItems = validMenuItemIds.map((menuItemId) => ({
+        MenuItemID: Number(menuItemId),
+        Quantity: 1,
+      }));
+      const isMealPrepOrder = customerOrderType === 'meal_prep' || customerBookingDraft.orderType === 'meal_prep';
+      const result = isMealPrepOrder
+        ? await createMealPrepOrder({
+            mealPrepFrequency: customerBookingDraft.mealPrepFrequency,
+            guestCount,
+          }, selectedItems)
+        : await createBooking({
+            ...customerBookingDraft,
+            eventDate,
+            eventTime,
+            venue,
+            guestCount,
+          }, selectedItems);
 
       if (!result.ok) {
-        console.error('BOOKING INSERT ERROR:', result.error);
-        alert(`Booking failed: ${result.error}`);
+        console.error(isMealPrepOrder ? 'MEAL_PREP_ORDER INSERT ERROR:' : 'BOOKING INSERT ERROR:', result.error);
+        alert(`${isMealPrepOrder ? 'Meal prep order' : 'Booking'} failed: ${result.error}`);
         setIsSubmitting(false);
         return;
       }
-  
+
+      if (isMealPrepOrder) {
+        setShowBookingSuccess(true);
+        return;
+      }
+
+      const bookingId = 'bookingId' in result ? result.bookingId : null;
+      if (bookingId === null) {
+        alert('Booking failed: no booking ID was returned.');
+        setIsSubmitting(false);
+        return;
+      }
   
       /*
        * Calculate invoice total
@@ -383,7 +407,7 @@ export default function BrowsePage() {
       } = await supabase
         .from('INVOICE')
         .insert({
-          BookingID: result.bookingId,
+          BookingID: bookingId,
           TotalAmount: totalAmount,
           DateGenerated: new Date().toISOString(),
         })
@@ -405,7 +429,7 @@ export default function BrowsePage() {
           .delete()
           .eq(
             'BookingID',
-            result.bookingId
+            bookingId
           );
   
         await supabase
@@ -413,7 +437,7 @@ export default function BrowsePage() {
           .delete()
           .eq(
             'BookingID',
-            result.bookingId
+            bookingId
           );
   
         alert(
@@ -521,6 +545,19 @@ export default function BrowsePage() {
                         : selectMenuItem(item.id)
                     }
                   >
+                    <div className="relative mb-5 overflow-hidden rounded-xl">
+                      <Image
+                        src={menuPlaceholderImages[Number(item.id) % menuPlaceholderImages.length]}
+                        alt={`${item.name} food placeholder`}
+                        width={720}
+                        height={480}
+                        className="h-44 w-full object-cover transition-transform duration-300 hover:scale-105"
+                      />
+                      <span className="absolute bottom-3 left-3 rounded-full bg-card/90 px-3 py-1 text-xs font-medium text-card-foreground backdrop-blur-sm">
+                        {item.category || 'Chef&apos;s selection'}
+                      </span>
+                    </div>
+
                     <div className="flex justify-between items-start mb-3">
                       <h3 className="font-semibold text-card-foreground flex-1">
                         {item.name}

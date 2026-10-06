@@ -1,7 +1,14 @@
 'use client';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
-import { updateIngredientStock } from '@/app/actions/inventory-actions';
+import {
+  createIngredient,
+  updateIngredient,
+  updateIngredientStock,
+  createDish,
+  updateDish,
+  updateDishAvailability,
+} from '@/app/actions/inventory-actions';
 import { Card } from '@/components/ui/card';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -38,6 +45,7 @@ type DatabaseIngredient = {
   UnitOfMeasure: string;
   CurrentStock: number;
   MaxStorageCapacity: number;
+  category?: string | null;
 };
 
 type DatabaseDishIngredient = {
@@ -54,7 +62,8 @@ type DatabaseMenuItem = {
   Price: number;
   PrepTimeDays: number;
   Description: string;
-};
+  Availability?: boolean;
+  };
 
 function getIngredientCategory(name: string): Exclude<IngredientCategory, 'all' | 'low'> {
   const value = name.toLowerCase();
@@ -115,7 +124,9 @@ function mapIngredient(
     unit: ingredient.UnitOfMeasure,
     currentStock: Number(ingredient.CurrentStock),
     maxCapacity: Number(ingredient.MaxStorageCapacity),
-    category: getIngredientCategory(ingredient.IngredientName),
+    category:
+      (ingredient.category as Exclude<IngredientCategory, 'all' | 'low'>) ||
+      getIngredientCategory(ingredient.IngredientName),
   };
 }
 
@@ -184,10 +195,26 @@ export default function InventoryPage() {
   const [editValue, setEditValue] = useState('');
 
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
+  const [formId, setFormId] = useState<string | null>(null);
+  const [formName, setFormName] = useState('');
+  const [formQuantity, setFormQuantity] = useState('');
+  const [formCategory, setFormCategory] = useState<Exclude<IngredientCategory, 'all' | 'low'>>('produce');
+  const [formSaving, setFormSaving] = useState(false);
+  const [dishFormOpen, setDishFormOpen] = useState(false);
+  const [dishFormMode, setDishFormMode] = useState<'add' | 'edit'>('add');
+  const [dishFormId, setDishFormId] = useState<string | null>(null);
+  const [dishFormName, setDishFormName] = useState('');
+  const [dishFormCategory, setDishFormCategory] = useState<'mains' | 'appetizers' | 'sides' | 'desserts' | 'beverages'>('mains');
+  const [dishFormDescription, setDishFormDescription] = useState('');
+  const [dishFormPrice, setDishFormPrice] = useState('0');
+  const [dishFormPrepTime, setDishFormPrepTime] = useState('1');
+  const [unavailableDishIds, setUnavailableDishIds] = useState<Set<string>>(new Set());
 
   const [activeTab, setActiveTab] = useState<
     'dishes' | 'ingredients'
-  >('dishes');
+  >('ingredients');
 
   const [dishCategory, setDishCategory] = useState<
     'all' | 'mains' | 'appetizers' | 'sides' | 'desserts'
@@ -215,7 +242,7 @@ export default function InventoryPage() {
         } = await supabase
           .from('INGREDIENT')
           .select(
-            'IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity'
+            'IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, category'
           )
           .order('IngredientID');
 
@@ -239,7 +266,7 @@ export default function InventoryPage() {
         } = await supabase
           .from('MENU_ITEM')
           .select(
-            'MenuItemID, ItemName, Category, Price, PrepTimeDays, Description'
+            'MenuItemID, ItemName, Category, Price, PrepTimeDays, Description, Availability'
           )
           .order('MenuItemID');
 
@@ -295,6 +322,7 @@ export default function InventoryPage() {
 
         setIngredients(mappedIngredients);
         setMenuItems(mappedMenuItems);
+        setUnavailableDishIds(new Set((menuItemRows ?? []).filter((item) => item.Availability === false).map((item) => String(item.MenuItemID))));
       } catch (error) {
         console.error(
           'Inventory loading error:',
@@ -406,6 +434,79 @@ export default function InventoryPage() {
     );
   }, [dishChecks, dishCategory]);
 
+  const openAddDish = () => {
+    setDishFormMode('add'); setDishFormId(null); setDishFormName(''); setDishFormCategory('mains'); setDishFormDescription(''); setDishFormPrice('0'); setDishFormPrepTime('1'); setDishFormOpen(true);
+  };
+
+  const openEditDish = (dish: MenuItem) => {
+    setDishFormMode('edit'); setDishFormId(dish.id); setDishFormName(dish.name); setDishFormCategory(dish.category); setDishFormDescription(dish.description); setDishFormPrice(String(dish.price)); setDishFormPrepTime(String(dish.prepTimeDays)); setDishFormOpen(true);
+  };
+
+  const handleDishSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormSaving(true);
+    const result = dishFormMode === 'add'
+      ? await createDish({ name: dishFormName, category: dishFormCategory, price: Number(dishFormPrice), prepTimeDays: Number(dishFormPrepTime), description: dishFormDescription })
+      : await updateDish(Number(dishFormId), { name: dishFormName, category: dishFormCategory, description: dishFormDescription });
+    if (!result.ok) { alert(`Failed to ${dishFormMode === 'add' ? 'add' : 'update'} dish: ${result.error}`); setFormSaving(false); return; }
+    const row = result.menuItem as DatabaseMenuItem;
+    const mapped = mapMenuItem(row, [], ingredients);
+    setMenuItems((current) => dishFormMode === 'add' ? [...current, mapped] : current.map((dish) => dish.id === mapped.id ? { ...dish, ...mapped } : dish));
+    setDishFormOpen(false); setFormSaving(false);
+  };
+
+  const toggleDishAvailability = async (dishId: string) => {
+    const nextAvailability = unavailableDishIds.has(dishId);
+    const result = await updateDishAvailability(Number(dishId), nextAvailability);
+    if (!result.ok) { alert(`Failed to update dish availability: ${result.error}`); return; }
+    setUnavailableDishIds((current) => { const next = new Set(current); nextAvailability ? next.delete(dishId) : next.add(dishId); return next; });
+  };
+
+  const openAddIngredient = () => {
+    setFormMode('add');
+    setFormId(null);
+    setFormName('');
+    setFormQuantity('');
+    setFormCategory('produce');
+    setFormOpen(true);
+  };
+
+  const openEditIngredient = (ingredient: Ingredient) => {
+    setFormMode('edit');
+    setFormId(ingredient.id);
+    setFormName(ingredient.name);
+    setFormQuantity(String(ingredient.currentStock));
+    setFormCategory(ingredient.category === 'other' ? 'pantry' : ingredient.category);
+    setFormOpen(true);
+  };
+
+  const handleIngredientSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const quantity = Number(formQuantity);
+    if (!formName.trim() || !Number.isFinite(quantity) || quantity < 0) {
+      alert('Enter a valid ingredient name and quantity.');
+      return;
+    }
+
+    setFormSaving(true);
+    const result = formMode === 'add'
+      ? await createIngredient({ name: formName, quantity, category: formCategory })
+      : await updateIngredient(Number(formId), { name: formName, quantity, category: formCategory });
+
+    if (!result.ok) {
+      alert(`Failed to ${formMode === 'add' ? 'add' : 'update'} ingredient: ${result.error}`);
+      setFormSaving(false);
+      return;
+    }
+
+    const mapped = mapIngredient(result.ingredient as DatabaseIngredient);
+    setIngredients((current) => formMode === 'add'
+      ? [...current, mapped].sort((a, b) => Number(a.id) - Number(b.id))
+      : current.map((ingredient) => ingredient.id === mapped.id ? mapped : ingredient));
+    setFormOpen(false);
+    setFormSaving(false);
+  };
+
   /*
    * Begin editing ingredient stock.
    */
@@ -485,7 +586,7 @@ export default function InventoryPage() {
         <div className="space-y-8">
           <div>
             <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-              Inventory & dish availability
+              Ingredient inventory
             </h1>
 
             <p className="text-surface-muted-foreground mt-2">
@@ -510,7 +611,7 @@ export default function InventoryPage() {
         <div className="space-y-8">
           <div>
             <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-              Inventory & dish availability
+              Ingredient inventory
             </h1>
 
             <p className="text-surface-muted-foreground mt-2">
@@ -544,34 +645,32 @@ export default function InventoryPage() {
       <div className="space-y-8">
 
         {/* PAGE HEADER */}
-        <div>
-          <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-            Inventory & dish availability
-          </h1>
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="font-heading text-3xl font-bold text-surface-foreground">
+              Ingredient inventory
+            </h1>
 
-          <p className="text-surface-muted-foreground mt-2">
-            Track dish availability, ingredient stock,
-            and low inventory in one place.
-          </p>
+            <p className="text-surface-muted-foreground mt-2">
+              Track dish availability, ingredient stock,
+              and low inventory in one place.
+            </p>
+          </div>
+
+          {activeTab === 'ingredients' && (
+            <button
+              type="button"
+              onClick={openAddIngredient}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              Add ingredient
+            </button>
+          )}
         </div>
 
         {/* TAB SELECTOR */}
         <div className="border-b border-border">
           <div className="flex gap-8">
-
-            <button
-              type="button"
-              onClick={() =>
-                setActiveTab('dishes')
-              }
-              className={`py-4 text-sm font-medium transition-colors ${
-                activeTab === 'dishes'
-                  ? 'border-b-2 border-primary text-card-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Dishes
-            </button>
 
             <button
               type="button"
@@ -592,7 +691,7 @@ export default function InventoryPage() {
 
         {/* DISH CATEGORIES */}
         {activeTab === 'dishes' && (
-          <div className="mt-6 flex flex-wrap gap-4">
+          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
 
             {[
               [
@@ -624,15 +723,23 @@ export default function InventoryPage() {
                     dish.category === 'sides'
                 ).length,
               ],
-              [
-                'desserts',
-                'Desserts',
-                dishChecks.filter(
-                  ({ dish }) =>
-                    dish.category === 'desserts'
-                ).length,
-              ],
-            ].map(
+  [
+  'desserts',
+  'Desserts',
+  dishChecks.filter(
+  ({ dish }) =>
+  dish.category === 'desserts'
+  ).length,
+  ],
+  [
+  'beverages',
+  'Beverages',
+  dishChecks.filter(
+  ({ dish }) =>
+  dish.category === 'beverages'
+  ).length,
+  ],
+  ].map(
               ([value, label, count]) => (
                 <button
                   key={value}
@@ -642,7 +749,7 @@ export default function InventoryPage() {
                       value as typeof dishCategory
                     )
                   }
-                  className={`flex-1 min-w-48 rounded-2xl border-2 p-5 text-left transition-all ${
+                  className={`min-w-0 rounded-2xl border-2 p-5 text-left transition-all ${
                     dishCategory === value
                       ? 'border-primary bg-primary/5'
                       : 'border-border bg-muted/20 hover:bg-muted/40'
@@ -703,6 +810,30 @@ export default function InventoryPage() {
                 ingredients.filter(
                   (i) =>
                     i.category === 'baking'
+                ).length,
+              ],
+              [
+                'produce',
+                'Produce',
+                ingredients.filter(
+                  (i) =>
+                    i.category === 'produce'
+                ).length,
+              ],
+              [
+                'pantry',
+                'Pantry',
+                ingredients.filter(
+                  (i) =>
+                    i.category === 'pantry'
+                ).length,
+              ],
+              [
+                'herbs_spices',
+                'Herbs & spices',
+                ingredients.filter(
+                  (i) =>
+                    i.category === 'herbs_spices'
                 ).length,
               ],
             ].map(
@@ -839,25 +970,26 @@ export default function InventoryPage() {
                       className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-muted/50 rounded-lg"
                     >
 
-                      <span className="font-medium text-card-foreground">
-                        {dish.name}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className={`font-medium ${unavailableDishIds.has(dish.id) ? 'text-muted-foreground line-through' : 'text-card-foreground'}`}>{dish.name}</span>
+                        {unavailableDishIds.has(dish.id) && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-800">Unavailable</span>}
+                      </div>
 
                       <div className="flex items-center gap-3">
 
-                        <span
-                          className={`text-xs font-medium px-2 py-1 rounded-full ${
-                            check.status ===
-                            'available'
-                              ? 'bg-green-100 text-green-800'
-                              : check.status ===
-                                'limited'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {check.status}
-                        </span>
+  <span
+  className={`text-xs font-medium px-2 py-1 rounded-full ${
+  unavailableDishIds.has(dish.id)
+  ? 'bg-red-100 text-red-800'
+  : check.status === 'available'
+  ? 'bg-green-100 text-green-800'
+  : check.status === 'limited'
+  ? 'bg-yellow-100 text-yellow-800'
+  : 'bg-red-100 text-red-800'
+  }`}
+  >
+  {unavailableDishIds.has(dish.id) ? 'unavailable' : check.status}
+  </span>
 
                         {check.shortfalls.length >
                           0 && (
@@ -872,6 +1004,8 @@ export default function InventoryPage() {
                           </span>
                         )}
 
+                        <button type="button" onClick={() => openEditDish(dish)} className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-muted">Edit</button>
+                        <button type="button" onClick={() => toggleDishAvailability(dish.id)} className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-muted">{unavailableDishIds.has(dish.id) ? 'Make available' : 'Make unavailable'}</button>
                       </div>
 
                     </div>
@@ -882,6 +1016,58 @@ export default function InventoryPage() {
 
             </Card>
           </>
+        )}
+
+        {dishFormOpen && (
+          <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-slate-950/75 p-4 backdrop-blur-[2px]">
+            <form onSubmit={handleDishSubmit} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl">
+              <h2 className="text-xl font-bold">{dishFormMode === 'add' ? 'Add dish' : 'Edit dish'}</h2>
+              <div className="mt-5 flex flex-col gap-4">
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Name<input value={dishFormName} onChange={(event) => setDishFormName(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" required /></label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Category<select value={dishFormCategory} onChange={(event) => setDishFormCategory(event.target.value as typeof dishFormCategory)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"><option value="mains">Main</option><option value="appetizers">Appetizers</option><option value="sides">Sides</option><option value="desserts">Dessert</option><option value="beverages">Beverages</option></select></label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Description<textarea value={dishFormDescription} onChange={(event) => setDishFormDescription(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" rows={3} /></label>
+                {dishFormMode === 'add' && <div className="grid grid-cols-2 gap-3"><label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Price<input type="number" min="0" step="0.01" value={dishFormPrice} onChange={(event) => setDishFormPrice(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" required /></label><label className="flex flex-col gap-1 text-sm font-medium text-slate-700">Prep days<input type="number" min="0" step="1" value={dishFormPrepTime} onChange={(event) => setDishFormPrepTime(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900" required /></label></div>}
+              </div>
+              <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setDishFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700">Cancel</button><button type="submit" disabled={formSaving} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">{formSaving ? 'Saving...' : 'Save changes'}</button></div>
+            </form>
+          </div>
+        )}
+
+        {formOpen && (
+<div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-slate-950/75 p-4 backdrop-blur-[2px]">
+  <form onSubmit={handleIngredientSubmit} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl">
+  <h2 className="text-xl font-bold text-slate-900">
+                {formMode === 'add' ? 'Add ingredient' : 'Edit ingredient'}
+              </h2>
+              <div className="mt-5 flex flex-col gap-4">
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+                  Name
+                  <input value={formName} onChange={(event) => setFormName(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+                  Quantity
+                  <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+                  Category
+                  <select value={formCategory} onChange={(event) => setFormCategory(event.target.value as typeof formCategory)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20">
+                    <option value="meats">Meats</option>
+                    <option value="dairy">Dairy</option>
+                    <option value="baking">Baking</option>
+                    <option value="produce">Produce</option>
+                    <option value="pantry">Pantry</option>
+                    <option value="herbs_spices">Herbs & spices</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100" disabled={formSaving}>Cancel</button>
+                <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50" disabled={formSaving}>
+                  {formSaving ? 'Saving...' : formMode === 'add' ? 'Add ingredient' : 'Save changes'}
+                </button>
+              </div>
+            </form>
+          </div>
         )}
 
         {/* INGREDIENTS TAB */}
@@ -914,6 +1100,7 @@ export default function InventoryPage() {
                     <th className="text-left p-6 font-semibold text-card-foreground">
                       Status
                     </th>
+                    <th className="p-6" aria-label="Actions" />
 
                   </tr>
                 </thead>
@@ -1078,6 +1265,15 @@ export default function InventoryPage() {
                               {statusLabel}
                             </span>
 
+                          </td>
+                          <td className="p-6 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openEditIngredient(ingredient)}
+                              className="rounded-lg border border-border px-3 py-1 text-sm hover:bg-muted"
+                            >
+                              Edit ingredient
+                            </button>
                           </td>
 
                         </tr>

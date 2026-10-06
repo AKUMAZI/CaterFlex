@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 
+import { createMenuItem, replaceDishIngredients, replaceMenuItemAllergies, updateMenuItem } from '@/app/actions/menu-actions'
 import { supabase } from '@/lib/supabase';
 import type { AllergenType, MenuItem } from '@/lib/types';
 
@@ -37,12 +38,39 @@ interface MenuItemFormProps {
   onClose: () => void;
 }
 
+type IngredientCategory = 'meats' | 'dairy' | 'baking' | 'produce' | 'pantry' | 'herbs_spices' | 'other'
+
 interface DbIngredient {
   IngredientID: number;
   IngredientName: string;
   UnitOfMeasure: string;
   CurrentStock: number;
   MaxStorageCapacity: number;
+  category?: string | null;
+}
+
+const ingredientCategoryLabels: Record<IngredientCategory, string> = {
+  meats: 'Meat & seafood',
+  dairy: 'Dairy & eggs',
+  baking: 'Baking',
+  produce: 'Produce',
+  pantry: 'Pantry',
+  herbs_spices: 'Herbs & spices',
+  other: 'Other',
+}
+
+function getIngredientCategory(ingredient: DbIngredient): IngredientCategory {
+  const category = ingredient.category?.toLowerCase().replace(/[- ]/g, '_')
+  if (category && category in ingredientCategoryLabels) return category as IngredientCategory
+
+  const name = ingredient.IngredientName.toLowerCase()
+  if (/chicken|beef|pork|salmon|shrimp|fish|turkey|bacon|meat/.test(name)) return 'meats'
+  if (/milk|cream|cheese|butter|yogurt|egg/.test(name)) return 'dairy'
+  if (/flour|sugar|yeast|baking|cocoa/.test(name)) return 'baking'
+  if (/salt|pepper|spice|cumin|paprika|cinnamon|oregano|basil|thyme|garlic powder/.test(name)) return 'herbs_spices'
+  if (/oil|vinegar|sauce|rice|pasta|bean|stock|broth|noodle/.test(name)) return 'pantry'
+  if (/tomato|onion|lettuce|carrot|potato|spinach|lemon|apple|berry|vegetable/.test(name)) return 'produce'
+  return 'other'
 }
 
 interface DbAllergyTag {
@@ -72,6 +100,7 @@ function toFormValues(
       category: item.category,
       price: item.price,
       prepTimeDays: item.prepTimeDays,
+      availability: item.availability !== false,
       allergyTags: item.allergyTags ?? [],
       requiredIngredients:
         item.requiredIngredients ?? [],
@@ -85,6 +114,7 @@ function toFormValues(
     category: 'mains',
     price: 0,
     prepTimeDays: 1,
+    availability: true,
     allergyTags: [],
     requiredIngredients: [],
   };
@@ -187,10 +217,12 @@ export function MenuItemForm({
             .select(
               `
                 IngredientID,
-                IngredientName,
-                UnitOfMeasure,
-                CurrentStock,
-                MaxStorageCapacity
+        IngredientName,
+        UnitOfMeasure,
+        CurrentStock,
+        MaxStorageCapacity,
+        category
+
               `
             )
             .order('IngredientName', {
@@ -622,66 +654,14 @@ export function MenuItemForm({
        * ====================================
        */
       if (!isEditing || !item) {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        
-        console.log('SUPABASE SESSION BEFORE MENU SAVE:', {
-          hasSession: !!session,
-          userId: session?.user?.id ?? null,
-          email: session?.user?.email ?? null,
-        });
-
-        const {
-          data,
-          error,
-        } = await supabase
-          .from('MENU_ITEM')
-          .insert({
-            ItemName:
-              form.name.trim(),
-
-            Category:
-              databaseCategory,
-
-            Price:
-              numericPrice,
-
-            PrepTimeDays:
-              Math.max(
-                0,
-                Number(
-                  form.prepTimeDays
-                ) || 0
-              ),
-
-            Description:
-              form.description.trim(),
-          })
-          .select('MenuItemID')
-          .single();
-
-        if (
-          error ||
-          !data
-        ) {
-          console.error(
-            'MENU_ITEM INSERT ERROR:',
-            error
-          );
-
-          throw new Error(
-            error?.message ??
-              'Unable to create the menu item.'
-          );
-        }
-
-        menuItemId =
-          Number(
-            data.MenuItemID
-          );
-
-          
+        menuItemId = await createMenuItem({
+          ItemName: form.name.trim(),
+          Category: databaseCategory,
+          Price: numericPrice,
+          PrepTimeDays: Math.max(0, Number(form.prepTimeDays) || 0),
+          Description: form.description.trim(),
+          Availability: form.availability !== false,
+        })
       }
 
       /*
@@ -703,47 +683,14 @@ export function MenuItemForm({
           );
         }
 
-        const {
-          error,
-        } = await supabase
-          .from('MENU_ITEM')
-          .update({
-            ItemName:
-              form.name.trim(),
-
-            Category:
-              databaseCategory,
-
-            Price:
-              numericPrice,
-
-            PrepTimeDays:
-              Math.max(
-                0,
-                Number(
-                  form.prepTimeDays
-                ) || 0
-              ),
-
-            Description:
-              form.description.trim(),
-          })
-          .eq(
-            'MenuItemID',
-            menuItemId
-          );
-
-        if (error) {
-          console.error(
-            'MENU_ITEM UPDATE ERROR:',
-            error
-          );
-
-          throw new Error(
-            error.message ||
-              'Unable to update the menu item.'
-          );
-        }
+        await updateMenuItem(menuItemId, {
+          ItemName: form.name.trim(),
+          Category: databaseCategory,
+          Price: numericPrice,
+          PrepTimeDays: Math.max(0, Number(form.prepTimeDays) || 0),
+          Description: form.description.trim(),
+          Availability: form.availability !== false,
+        })
       }
 
       /*
@@ -754,68 +701,22 @@ export function MenuItemForm({
        * We remove the old rows first and
        * recreate them from the current form.
        */
-      const {
-        error:
-          deleteIngredientError,
-      } = await supabase
-        .from('DISH_INGREDIENT')
-        .delete()
-        .eq(
-          'MenuItemID',
-          menuItemId
-        );
+      // Relationship writes run server-side because the app's custom session is not a Supabase Auth session.
 
-      if (
-        deleteIngredientError
-      ) {
-        console.error(
-          'DISH_INGREDIENT DELETE ERROR:',
-          deleteIngredientError
-        );
-
-        throw new Error(
-          deleteIngredientError.message
-        );
-      }
 
       /*
        * ====================================
        * REMOVE OLD ALLERGEN RELATIONSHIPS
        * ====================================
        */
-      const {
-        error:
-          deleteAllergyError,
-      } = await supabase
-        .from('MENU_ITEM_ALLERGY')
-        .delete()
-        .eq(
-          'MenuItemID',
-          menuItemId
-        );
-
-      if (
-        deleteAllergyError
-      ) {
-        console.error(
-          'MENU_ITEM_ALLERGY DELETE ERROR:',
-          deleteAllergyError
-        );
-
-        throw new Error(
-          deleteAllergyError.message
-        );
-      }
+      // Allergen relationship writes run server-side for the same custom-session RLS boundary.
 
       /*
        * ====================================
        * SAVE INGREDIENT RELATIONSHIPS
        * ====================================
        */
-      if (
-        form.requiredIngredients
-          .length > 0
-      ) {
+      {
         const dishIngredientRows =
           form.requiredIngredients.map(
             (ingredient) => ({
@@ -834,41 +735,14 @@ export function MenuItemForm({
             })
           );
 
-        const {
-          error:
-            dishIngredientError,
-        } = await supabase
-          .from('DISH_INGREDIENT')
-          .insert(
-            dishIngredientRows
-          );
-
-        if (
-          dishIngredientError
-        ) {
-          console.error(
-            'DISH_INGREDIENT INSERT ERROR:',
-            dishIngredientError
-          );
-
-          /*
-           * If this was a newly created
-           * menu item, remove it if the
-           * relationship save failed.
-           */
+        try {
+          await replaceDishIngredients(menuItemId, dishIngredientRows)
+        } catch (error) {
+          console.error('DISH_INGREDIENT SAVE ERROR:', error)
           if (!isEditing) {
-            await supabase
-              .from('MENU_ITEM')
-              .delete()
-              .eq(
-                'MenuItemID',
-                menuItemId
-              );
+            await supabase.from('MENU_ITEM').delete().eq('MenuItemID', menuItemId)
           }
-
-          throw new Error(
-            dishIngredientError.message
-          );
+          throw error
         }
       }
 
@@ -877,87 +751,22 @@ export function MenuItemForm({
        * SAVE ALLERGEN RELATIONSHIPS
        * ====================================
        */
-      if (
-        form.allergyTags.length > 0
-      ) {
-        const menuAllergyRows =
-          form.allergyTags
-            .map((allergen) => {
-              const tag =
-                allergyTags.find(
-                  (allergy) =>
-                    allergy.AllergenName ===
-                    allergen
-                );
+      {
+        const menuAllergyRows = form.allergyTags
+          .map((allergen) => {
+            const tag = allergyTags.find((allergy) => allergy.AllergenName === allergen)
+            return tag ? { MenuItemID: menuItemId, AllergyTagID: tag.AllergyTagID } : null
+          })
+          .filter((row): row is { MenuItemID: number; AllergyTagID: number } => row !== null)
 
-              if (!tag) {
-                return null;
-              }
-
-              return {
-                MenuItemID:
-                  menuItemId,
-
-                AllergyTagID:
-                  tag.AllergyTagID,
-              };
-            })
-            .filter(
-              (
-                row
-              ): row is {
-                MenuItemID: number;
-                AllergyTagID: number;
-              } =>
-                row !== null
-            );
-
-        if (
-          menuAllergyRows.length > 0
-        ) {
-          console.log(
-            'MENU_ITEM_ALLERGY ROWS:',
-            menuAllergyRows
-          );
-
-          const {
-            error:
-              menuAllergyError,
-          } = await supabase
-            .from(
-              'MENU_ITEM_ALLERGY'
-            )
-            .insert(
-              menuAllergyRows
-            );
-
-          if (
-            menuAllergyError
-          ) {
-            console.error(
-              'MENU_ITEM_ALLERGY INSERT ERROR:',
-              menuAllergyError
-            );
-
-            /*
-             * If this is a newly created
-             * item and its relationships
-             * fail, remove the menu item.
-             */
-            if (!isEditing) {
-              await supabase
-                .from('MENU_ITEM')
-                .delete()
-                .eq(
-                  'MenuItemID',
-                  menuItemId
-                );
-            }
-
-            throw new Error(
-              menuAllergyError.message
-            );
+        try {
+          await replaceMenuItemAllergies(menuItemId, menuAllergyRows)
+        } catch (error) {
+          console.error('MENU_ITEM_ALLERGY SAVE ERROR:', error)
+          if (!isEditing) {
+            await supabase.from('MENU_ITEM').delete().eq('MenuItemID', menuItemId)
           }
+          throw error
         }
       }
 
@@ -1177,6 +986,17 @@ export function MenuItemForm({
               </div>
             </div>
 
+            {/* AVAILABILITY */}
+            <label className="flex items-center gap-3 text-sm text-card-foreground">
+              <input
+                type="checkbox"
+                checked={form.availability !== false}
+                onChange={(e) => setForm({ ...form, availability: e.target.checked })}
+                className="rounded border-border"
+              />
+              <span>Available for ordering</span>
+            </label>
+
             {/* ALLERGENS */}
             <div>
               <p className="text-sm font-medium text-card-foreground mb-3">
@@ -1306,29 +1126,31 @@ export function MenuItemForm({
                       Select…
                     </option>
 
-                    {ingredients.map(
-                      (ingredient) => (
-                        <option
-                          key={
-                            ingredient.IngredientID
-                          }
-                          value={String(
-                            ingredient.IngredientID
-                          )}
-                        >
-                          {
-                            ingredient.IngredientName
-                          }
-                        </option>
+                    {Object.entries(
+                      ingredients.reduce<Record<IngredientCategory, DbIngredient[]>>(
+                        (groups, ingredient) => {
+                          const category = getIngredientCategory(ingredient)
+                          groups[category].push(ingredient)
+                          return groups
+                        },
+                        { meats: [], dairy: [], baking: [], produce: [], pantry: [], herbs_spices: [], other: [] }
                       )
-                    )}
+                    ).map(([category, categoryIngredients]) => categoryIngredients.length > 0 && (
+                      <optgroup key={category} label={ingredientCategoryLabels[category as IngredientCategory]}>
+                        {categoryIngredients.map((ingredient) => (
+                          <option key={ingredient.IngredientID} value={String(ingredient.IngredientID)}>
+                            {ingredient.IngredientName} ({ingredient.UnitOfMeasure || 'unit'})
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </div>
 
                 {/* QUANTITY */}
                 <div className="w-24">
-                  <label className="text-xs text-muted-foreground">
-                    Qty
+                    <label className="text-xs text-muted-foreground">
+                    Qty ({ingredients.find((ingredient) => String(ingredient.IngredientID) === ingredientId)?.UnitOfMeasure || 'unit'})
                   </label>
 
                   <input

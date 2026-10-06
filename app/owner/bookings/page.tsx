@@ -27,8 +27,8 @@ type Booking = {
   BookingID: number;
   CustomerID: number | null;
   OperatorID: number | null;
-  EventDate: string;
-  EventTime: string;
+  EventDate: string | null;
+  EventTime: string | null;
   OrderType: 'catering' | 'meal_prep' | null;
   Venue: string | null;
   GuestCount: number;
@@ -144,8 +144,10 @@ export default function BookingsPage() {
 
       const bookingData = bookingResult.bookings;
       const bookingItemData = bookingResult.bookingItems;
+      const mealPrepOrderData = bookingResult.mealPrepOrders;
+      const mealPrepItemData = bookingResult.mealPrepItems;
 
-      if (bookingData.length === 0) {
+      if (bookingData.length === 0 && mealPrepOrderData.length === 0) {
         setBookings([]);
         return;
       }
@@ -159,6 +161,9 @@ export default function BookingsPage() {
           [
             ...(bookingData ?? []).map(
               (booking) => booking.CustomerID
+            ),
+            ...(mealPrepOrderData ?? []).map(
+              (order) => order.CustomerID
             ),
           ].filter(
             (id): id is number => id !== null
@@ -200,6 +205,9 @@ export default function BookingsPage() {
           ...bookingItems.map(
             (item) => item.MenuItemID
           ),
+          ...mealPrepItemData.map(
+            (item) => item.MenuItemID
+          ),
         ])
       );
 
@@ -231,50 +239,51 @@ export default function BookingsPage() {
       // COMBINE CATERING BOOKINGS
       // ============================================================
 
-      const combinedBookings: BookingDisplay[] =
-        (bookingData ?? []).map((booking) => {
-          const customer =
-            customers.find(
-              (item) =>
-                item.CustomerID ===
-                booking.CustomerID
-            ) ?? null;
-
+      const combinedBookings: BookingDisplay[] = [
+        ...(bookingData ?? []).map((booking) => {
+          const customer = customers.find((item) => item.CustomerID === booking.CustomerID) ?? null;
           const items = bookingItems
-            .filter(
-              (item) =>
-                item.BookingID ===
-                booking.BookingID
-            )
+            .filter((item) => item.BookingID === booking.BookingID)
             .map((bookingItem) => {
-              const menuItem =
-                menuItems.find(
-                  (item) =>
-                    item.MenuItemID ===
-                    bookingItem.MenuItemID
-                );
-
+              const menuItem = menuItems.find((item) => item.MenuItemID === bookingItem.MenuItemID);
               return {
-                name:
-                  menuItem?.ItemName ??
-                  `Menu Item #${bookingItem.MenuItemID}`,
+                name: menuItem?.ItemName ?? `Menu Item #${bookingItem.MenuItemID}`,
+                quantity: bookingItem.Quantity,
+                price: Number(menuItem?.Price ?? 0),
+              };
+            });
 
-                quantity:
-                  bookingItem.Quantity,
-
-                price: Number(
-                  menuItem?.Price ?? 0
-                ),
+          return { ...booking, OrderType: 'catering' as const, customer, items };
+        }),
+        ...(mealPrepOrderData ?? []).map((order) => {
+          const customer = customers.find((item) => item.CustomerID === order.CustomerID) ?? null;
+          const items = mealPrepItemData
+            .filter((item) => item.MealPrepOrderID === order.MealPrepOrderID)
+            .map((mealPrepItem) => {
+              const menuItem = menuItems.find((item) => item.MenuItemID === mealPrepItem.MenuItemID);
+              return {
+                name: menuItem?.ItemName ?? `Menu Item #${mealPrepItem.MenuItemID}`,
+                quantity: mealPrepItem.Quantity,
+                price: Number(menuItem?.Price ?? 0),
               };
             });
 
           return {
-            ...booking,
-            OrderType: 'catering' as const,
+            BookingID: -Math.abs(order.MealPrepOrderID),
+            CustomerID: order.CustomerID,
+            OperatorID: order.OperatorID,
+            EventDate: null,
+            EventTime: order.RecurrencePattern,
+            OrderType: 'meal_prep' as const,
+            Venue: null,
+            GuestCount: order.MealsPerCycle ?? 0,
+            Status: order.Status,
+            AllergenConflictFlag: order.AllergenConflictFlag ?? false,
             customer,
             items,
           };
-        });
+        }),
+      ];
 
       setBookings(combinedBookings);
     } catch (error) {

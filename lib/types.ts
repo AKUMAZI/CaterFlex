@@ -41,6 +41,7 @@ export interface MenuItem {
   category: 'appetizers' | 'mains' | 'sides' | 'desserts' | 'beverages';
   price: number;
   prepTimeDays: number;
+  availability?: boolean;
   macros: {
     carbs: number;
     protein: number;

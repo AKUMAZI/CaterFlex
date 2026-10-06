@@ -5,21 +5,79 @@ import { useAppState } from '@/lib/state';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getUpcomingFulfillmentDates } from '@/lib/rules/mealPrep';
+import { getCustomerMealPrepOrders } from '@/app/actions/booking-actions';
 import { Calendar, MapPin, Users, Clock, Pause, Play, Edit2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function ActiveOrdersPage() {
   const router = useRouter();
-  const { bookings, menuItems, updateBooking } = useAppState();
+  const { currentUser, bookings, menuItems, updateBooking } = useAppState();
+  const [mealPrepOrders, setMealPrepOrders] = useState<Array<{
+    id: string;
+    customerId: string;
+    customerName: string;
+    customerEmail: string;
+    orderType: 'meal_prep';
+    eventDate: string;
+    eventTime: string;
+    eventType: string;
+    venue: string;
+    guestCount: number;
+    mealPrepFrequency: 'weekly' | 'biweekly';
+    fulfillmentMethod: 'pickup';
+    mealPrepStatus: 'active' | 'paused';
+    specialRequests: string;
+    status: 'pending' | 'confirmed';
+    selectedMenuItemIds: string[];
+  }>>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ servings: '', time: '', frequency: 'weekly', method: 'pickup', address: '', notes: '', dishIds: [] as string[] });
 
-  // Filter for confirmed meal prep orders only
-  const activeMealPrepOrders = bookings.filter(
-    (b) => b.orderType === 'meal_prep' && b.status === 'confirmed'
-  );
+  useEffect(() => {
+    getCustomerMealPrepOrders().then((result) => {
+      if (!result.ok) return;
+      setMealPrepOrders(result.orders
+        .filter((order) => order.Status === 'pending' || order.Status === 'confirmed')
+        .map((order) => ({
+          id: `meal-prep-${order.MealPrepOrderID}`,
+          customerId: String(order.CustomerID),
+          customerName: currentUser?.name ?? 'Customer',
+          customerEmail: currentUser?.email ?? '',
+          orderType: 'meal_prep' as const,
+          eventDate: new Date().toISOString().slice(0, 10),
+          eventTime: '12:00',
+          eventType: 'Meal prep plan',
+          venue: 'Kitchen',
+          guestCount: Number(order.MealsPerCycle ?? 0),
+          mealPrepFrequency: order.RecurrencePattern === 'biweekly' ? 'biweekly' as const : 'weekly' as const,
+          fulfillmentMethod: 'pickup' as const,
+          mealPrepStatus: order.Status === 'confirmed' ? 'active' as const : 'paused' as const,
+          specialRequests: '',
+          status: order.Status === 'confirmed' ? 'confirmed' as const : 'pending' as const,
+          selectedMenuItemIds: (result.items ?? [])
+            .filter((item) => item.MealPrepOrderID === order.MealPrepOrderID)
+            .map((item) => String(item.MenuItemID)),
+        })));
+    });
+  }, [currentUser?.email, currentUser?.name]);
+
+  // Keep the tab scoped to the signed-in customer before applying meal-plan filters.
+  const customerBookings = currentUser
+    ? bookings.filter(
+        (booking) =>
+          booking.customerId === currentUser.id ||
+          booking.customerEmail.toLowerCase() === currentUser.email.toLowerCase()
+      )
+    : [];
+
+  const activeMealPrepOrders = [
+    ...customerBookings.filter(
+      (booking) => booking.orderType === 'meal_prep' && (booking.status === 'confirmed' || booking.status === 'pending')
+    ),
+    ...mealPrepOrders,
+  ];
 
   const toggleOrderStatus = (bookingId: string, currentStatus: 'active' | 'paused') => {
     updateBooking(bookingId, {
@@ -179,35 +237,35 @@ export default function ActiveOrdersPage() {
 
                     {editingId === booking.id && (
                       <>
-                        <div className="mb-6 rounded-xl border border-primary/30 bg-background p-4">
-                        <p className="mb-3 text-sm font-medium text-card-foreground">Dishes in this meal plan</p>
+                        <div className="mb-6 rounded-xl border border-border bg-primary/5 p-3 text-card-foreground">
+                        <p className="mb-3 text-xs font-medium text-card-foreground">Dishes in this meal plan</p>
                         <div className="grid gap-2 sm:grid-cols-2">
                           {menuItems.map((dish) => (
-                            <label key={dish.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm text-card-foreground hover:bg-muted/50">
-                              <input type="checkbox" checked={editDraft.dishIds.includes(dish.id)} onChange={(event) => setEditDraft({ ...editDraft, dishIds: event.target.checked ? [...editDraft.dishIds, dish.id] : editDraft.dishIds.filter((id) => id !== dish.id) })} className="size-4 accent-primary" />
+                            <label key={dish.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#241f1b] bg-[#f7f3ed] p-3 text-sm text-card-foreground hover:bg-[#eee7dd]">
+                              <input type="checkbox" checked={editDraft.dishIds.includes(dish.id)} onChange={(event) => setEditDraft({ ...editDraft, dishIds: event.target.checked ? [...editDraft.dishIds, dish.id] : editDraft.dishIds.filter((id) => id !== dish.id) })} className="size-4 accent-[#c86e4b]" />
                               <span>{dish.name}</span>
                             </label>
                           ))}
                         </div>
                       </div>
-                      <div className="mb-6 grid gap-4 rounded-xl border border-primary/30 bg-background p-4 md:grid-cols-2">
-                        <label className="text-sm font-medium text-card-foreground">Servings
-                          <input type="number" min="1" value={editDraft.servings} onChange={(e) => setEditDraft({ ...editDraft, servings: e.target.value })} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2" />
+                      <div className="mb-6 grid gap-4 rounded-xl border border-border bg-primary/5 p-3 text-card-foreground md:grid-cols-2">
+                        <label className="text-xs font-medium text-card-foreground">Servings
+                          <input type="number" min="1" value={editDraft.servings} onChange={(e) => setEditDraft({ ...editDraft, servings: e.target.value })} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-card-foreground outline-none focus:ring-2 focus:ring-[#c86e4b]" />
                         </label>
-                        <label className="text-sm font-medium text-card-foreground">Fulfillment time
-                          <input type="time" value={editDraft.time} onChange={(e) => setEditDraft({ ...editDraft, time: e.target.value })} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2" />
+                        <label className="text-xs font-medium text-card-foreground">Fulfillment time
+                          <input type="time" value={editDraft.time} onChange={(e) => setEditDraft({ ...editDraft, time: e.target.value })} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-card-foreground outline-none focus:ring-2 focus:ring-[#c86e4b]" />
                         </label>
-                        <label className="text-sm font-medium text-card-foreground">Frequency
-                          <select value={editDraft.frequency} onChange={(e) => setEditDraft({ ...editDraft, frequency: e.target.value })} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2"><option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks</option></select>
+                        <label className="text-xs font-medium text-card-foreground">Frequency
+                          <select value={editDraft.frequency} onChange={(e) => setEditDraft({ ...editDraft, frequency: e.target.value })} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-card-foreground outline-none focus:ring-2 focus:ring-[#c86e4b]"><option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks</option></select>
                         </label>
-                        <label className="text-sm font-medium text-card-foreground">Fulfillment method
-                          <select value={editDraft.method} onChange={(e) => setEditDraft({ ...editDraft, method: e.target.value })} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2"><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select>
+                        <label className="text-xs font-medium text-card-foreground">Fulfillment method
+                          <select value={editDraft.method} onChange={(e) => setEditDraft({ ...editDraft, method: e.target.value })} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-card-foreground outline-none focus:ring-2 focus:ring-[#c86e4b]"><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select>
                         </label>
-                        {editDraft.method === 'delivery' && <label className="text-sm font-medium text-card-foreground md:col-span-2">Delivery address
-                          <input value={editDraft.address} onChange={(e) => setEditDraft({ ...editDraft, address: e.target.value })} required className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2" />
+                        {editDraft.method === 'delivery' && <label className="text-xs font-medium text-card-foreground md:col-span-2">Delivery address
+                          <input value={editDraft.address} onChange={(e) => setEditDraft({ ...editDraft, address: e.target.value })} required className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-card-foreground outline-none focus:ring-2 focus:ring-[#c86e4b]" />
                         </label>}
-                        <label className="text-sm font-medium text-card-foreground md:col-span-2">Special requests
-                          <textarea value={editDraft.notes} onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })} rows={3} className="mt-2 w-full rounded-lg border border-border bg-card px-3 py-2" />
+                        <label className="text-xs font-medium text-card-foreground md:col-span-2">Special requests
+                          <textarea value={editDraft.notes} onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })} rows={3} className="mt-2 w-full rounded-lg border border-[#241f1b] bg-[#f7f3ed] px-3 py-2 text-sm text-card-foreground outline-none focus:ring-2 focus:ring-[#c86e4b]" />
                         </label>
                       </div>
                       </>
