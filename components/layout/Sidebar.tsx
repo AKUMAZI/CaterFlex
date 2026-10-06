@@ -16,6 +16,7 @@ import {
   Activity,
   Users,
   Shield,
+  Bell,
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -34,6 +35,7 @@ export function Sidebar() {
     { href: '/owner/prep-schedule', label: 'Prep Schedule', icon: Clock },
     { href: '/owner/payments', label: 'Payments', icon: DollarSign },
     { href: '/owner/settings', label: 'Operating Rules', icon: Settings },
+    { href: '/owner/notifications', label: 'Notifications', icon: Bell },
   ];
 
   const customerLinks = [

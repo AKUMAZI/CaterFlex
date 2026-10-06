@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { Card } from '@/components/ui/card';
-import { Clock, PackageCheck, Utensils } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Clock, PackageCheck } from 'lucide-react';
 
-import { supabase } from '@/lib/supabase';
+import { getOwnerPrepSchedule } from '@/app/actions/booking-actions';
 
 const OPERATOR_ID = 2;
 
@@ -43,6 +44,7 @@ type MealPrepOrder = {
   CustomerID: number | null;
   RecurrencePattern: string | null;
   MealsPerCycle: number | null;
+  NextFulfillmentDate: string | null;
   Status: string | null;
 };
 
@@ -71,6 +73,7 @@ type MealPrepDisplayItem = {
   customerName: string;
   recurrencePattern: string;
   mealsPerCycle: number;
+  nextFulfillmentDate: string | null;
   quantity: number;
 };
 
@@ -84,6 +87,7 @@ export default function PrepSchedulePage() {
   >([]);
 
   const [loading, setLoading] = useState(true);
+  const [activeSchedule, setActiveSchedule] = useState<'catering' | 'meal-prep'>('catering');
 
   const [error, setError] = useState<string | null>(
     null
@@ -99,195 +103,15 @@ export default function PrepSchedulePage() {
       setError(null);
 
       try {
-        // ========================================================
-        // 1. LOAD CONFIRMED CATERING BOOKINGS
-        // ========================================================
+        const schedule = await getOwnerPrepSchedule();
+        if (!schedule.ok) throw new Error(schedule.error);
 
-        const {
-          data: bookingData,
-          error: bookingError,
-        } = await supabase
-          .from('BOOKING')
-          .select(
-            'BookingID, CustomerID, EventDate, EventTime, Venue, GuestCount, Status'
-          )
-          .eq('OperatorID', OPERATOR_ID)
-          .eq('Status', 'confirmed');
-
-        if (bookingError) {
-          throw bookingError;
-        }
-
-        const bookings =
-          (bookingData ?? []) as Booking[];
-
-        // ========================================================
-        // 2. LOAD CATERING BOOKING ITEMS
-        // ========================================================
-
-        const bookingIds = bookings.map(
-          (booking) => booking.BookingID
-        );
-
-        let bookingItems: BookingItem[] = [];
-
-        if (bookingIds.length > 0) {
-          const {
-            data: bookingItemData,
-            error: bookingItemError,
-          } = await supabase
-            .from('BOOKING_ITEM')
-            .select(
-              'BookingItemID, BookingID, MenuItemID, Quantity'
-            )
-            .in('BookingID', bookingIds);
-
-          if (bookingItemError) {
-            throw bookingItemError;
-          }
-
-          bookingItems =
-            (bookingItemData ?? []) as BookingItem[];
-        }
-
-        // ========================================================
-        // 3. LOAD CONFIRMED MEAL PREP ORDERS
-        // ========================================================
-
-        const {
-          data: mealPrepOrderData,
-          error: mealPrepOrderError,
-        } = await supabase
-          .from('MEAL_PREP_ORDER')
-          .select(
-            'MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, Status'
-          )
-          .eq('OperatorID', OPERATOR_ID)
-          .eq('Status', 'confirmed');
-
-        if (mealPrepOrderError) {
-          throw mealPrepOrderError;
-        }
-
-        const mealPrepOrders =
-          (mealPrepOrderData ??
-            []) as MealPrepOrder[];
-
-        // ========================================================
-        // 4. LOAD MEAL PREP ITEMS
-        // ========================================================
-
-        const mealPrepOrderIds =
-          mealPrepOrders.map(
-            (order) => order.MealPrepOrderID
-          );
-
-        let mealPrepItems: MealPrepItem[] = [];
-
-        if (mealPrepOrderIds.length > 0) {
-          const {
-            data: mealPrepItemData,
-            error: mealPrepItemError,
-          } = await supabase
-            .from('MEAL_PREP_ITEM')
-            .select(
-              'MealPrepItemID, MealPrepOrderID, MenuItemID, Quantity'
-            )
-            .in(
-              'MealPrepOrderID',
-              mealPrepOrderIds
-            );
-
-          if (mealPrepItemError) {
-            throw mealPrepItemError;
-          }
-
-          mealPrepItems =
-            (mealPrepItemData ??
-              []) as MealPrepItem[];
-        }
-
-        // ========================================================
-        // 5. GET ALL CUSTOMER IDS
-        // ========================================================
-
-        const customerIds = Array.from(
-          new Set(
-            [
-              ...bookings.map(
-                (booking) => booking.CustomerID
-              ),
-              ...mealPrepOrders.map(
-                (order) => order.CustomerID
-              ),
-            ].filter(
-              (id): id is number => id !== null
-            )
-          )
-        );
-
-        // ========================================================
-        // 6. LOAD CUSTOMERS
-        // ========================================================
-
-        let customers: Customer[] = [];
-
-        if (customerIds.length > 0) {
-          const {
-            data: customerData,
-            error: customerError,
-          } = await supabase
-            .from('CUSTOMER')
-            .select('CustomerID, Name')
-            .in('CustomerID', customerIds);
-
-          if (customerError) {
-            throw customerError;
-          }
-
-          customers =
-            (customerData ?? []) as Customer[];
-        }
-
-        // ========================================================
-        // 7. GET ALL MENU ITEM IDS
-        // ========================================================
-
-        const menuItemIds = Array.from(
-          new Set([
-            ...bookingItems.map(
-              (item) => item.MenuItemID
-            ),
-            ...mealPrepItems.map(
-              (item) => item.MenuItemID
-            ),
-          ])
-        );
-
-        // ========================================================
-        // 8. LOAD MENU ITEMS
-        // ========================================================
-
-        let menuItems: MenuItem[] = [];
-
-        if (menuItemIds.length > 0) {
-          const {
-            data: menuItemData,
-            error: menuItemError,
-          } = await supabase
-            .from('MENU_ITEM')
-            .select(
-              'MenuItemID, ItemName, PrepTimeDays'
-            )
-            .in('MenuItemID', menuItemIds);
-
-          if (menuItemError) {
-            throw menuItemError;
-          }
-
-          menuItems =
-            (menuItemData ?? []) as MenuItem[];
-        }
+        const bookings = schedule.bookings as Booking[];
+        const bookingItems = schedule.bookingItems as BookingItem[];
+        const mealPrepOrders = schedule.mealPrepOrders as MealPrepOrder[];
+        const mealPrepItems = schedule.mealPrepItems as MealPrepItem[];
+        const customers = schedule.customers as Customer[];
+        const menuItems = schedule.menuItems as MenuItem[];
 
         // ========================================================
         // 9. BUILD CATERING PREPARATION SCHEDULE
@@ -430,6 +254,9 @@ export default function PrepSchedulePage() {
                   order.MealsPerCycle ?? 0
                 ),
 
+              nextFulfillmentDate:
+                order.NextFulfillmentDate,
+
               quantity:
                 mealPrepItem.Quantity,
             });
@@ -481,6 +308,16 @@ export default function PrepSchedulePage() {
           a.prepStartDate.getTime() -
           b.prepStartDate.getTime()
       );
+
+  const scheduledMealPrep = [...mealPrep].sort((a, b) => {
+    const dateA = a.nextFulfillmentDate
+      ? new Date(`${a.nextFulfillmentDate}T00:00:00`).getTime()
+      : Number.POSITIVE_INFINITY;
+    const dateB = b.nextFulfillmentDate
+      ? new Date(`${b.nextFulfillmentDate}T00:00:00`).getTime()
+      : Number.POSITIVE_INFINITY;
+    return dateA - dateB;
+  });
 
   // ============================================================
   // PAGE
@@ -537,11 +374,33 @@ export default function PrepSchedulePage() {
 
         {!loading && !error && (
           <>
+            <div className="flex flex-wrap gap-3" role="group" aria-label="Preparation schedule type">
+              <Button
+                type="button"
+                variant={activeSchedule === 'catering' ? 'default' : 'outline'}
+                onClick={() => setActiveSchedule('catering')}
+                aria-pressed={activeSchedule === 'catering'}
+              >
+                <Clock data-icon="inline-start" />
+                Catering Preparations
+              </Button>
+              <Button
+                type="button"
+                variant={activeSchedule === 'meal-prep' ? 'default' : 'outline'}
+                onClick={() => setActiveSchedule('meal-prep')}
+                aria-pressed={activeSchedule === 'meal-prep'}
+              >
+                <PackageCheck data-icon="inline-start" />
+                Meal Prep
+              </Button>
+            </div>
+
             {/* ==================================================
                 CATERING PREPARATIONS
             ================================================== */}
 
-            <Card className="p-8">
+            {activeSchedule === 'catering' ? (
+              <Card className="p-8">
 
               <div className="flex items-center gap-2 mb-6">
 
@@ -686,12 +545,14 @@ export default function PrepSchedulePage() {
               )}
 
             </Card>
+            ) : null}
 
             {/* ==================================================
                 RECURRING MEAL PREP
             ================================================== */}
 
-            <Card className="p-8">
+            {activeSchedule === 'meal-prep' ? (
+              <Card className="p-8">
 
               <div className="flex items-center gap-2 mb-6">
 
@@ -710,10 +571,9 @@ export default function PrepSchedulePage() {
 
               </div>
 
-              {mealPrep.length > 0 ? (
+              {scheduledMealPrep.length > 0 ? (
                 <div className="space-y-4">
-
-                  {mealPrep.map((item) => (
+                  {scheduledMealPrep.map((item) => (
                     <div
                       key={item.id}
                       className="p-4 rounded-lg border-2 border-border bg-muted/50"
@@ -760,6 +620,13 @@ export default function PrepSchedulePage() {
                             per cycle
                           </p>
 
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Next fulfillment:{' '}
+                            {item.nextFulfillmentDate
+                              ? new Date(`${item.nextFulfillmentDate}T00:00:00`).toLocaleDateString()
+                              : 'Not scheduled'}
+                          </p>
+
                         </div>
 
                       </div>
@@ -790,6 +657,7 @@ export default function PrepSchedulePage() {
               )}
 
             </Card>
+            ) : null}
           </>
         )}
 

@@ -2,6 +2,9 @@
 
 import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { validateBooking } from '@/lib/rules/bookingValidation'
+import type { Booking, DayOfWeek, OperatorSettings } from '@/lib/types'
+import { createNotification } from '@/lib/notifications'
 
 const BOOKING_FIELDS = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, AllergenConflictFlag'
 const BOOKING_ITEM_FIELDS = 'BookingItemID, BookingID, MenuItemID, Quantity'
@@ -22,6 +25,12 @@ type BookingItemInput = {
 type MealPrepOrderDetails = {
   mealPrepFrequency?: string | null
   guestCount?: number
+}
+
+function addDaysToDate(date: Date, days: number) {
+  const nextDate = new Date(date)
+  nextDate.setDate(nextDate.getDate() + days)
+  return nextDate.toISOString().slice(0, 10)
 }
 
 export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, items: BookingItemInput[]) {
@@ -57,6 +66,7 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
   const hasAllergenConflict = (menuItemAllergies ?? []).some((allergy) => customerAllergenNames.has(allergenNamesById.get(Number(allergy.AllergyTagID)) ?? ''))
   const mealsPerCycle = Number(orderDetails.guestCount ?? 0)
   const recurrencePattern = String(orderDetails.mealPrepFrequency ?? 'weekly').trim() || 'weekly'
+  const nextFulfillmentDate = addDaysToDate(new Date(), recurrencePattern === 'biweekly' ? 14 : 7)
 
   if (!Number.isFinite(mealsPerCycle) || mealsPerCycle <= 0) {
     return { ok: false as const, error: 'Meals per cycle must be greater than 0.' }
@@ -74,6 +84,7 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
       MealsPerCycle: mealsPerCycle,
       Status: 'pending',
       AllergenConflictFlag: hasAllergenConflict,
+      NextFulfillmentDate: nextFulfillmentDate,
     })
     .select('MealPrepOrderID')
     .single()
@@ -99,7 +110,7 @@ export async function getCustomerMealPrepOrders() {
   const admin = createAdminClient()
   const { data: orders, error } = await admin
     .from('MEAL_PREP_ORDER')
-    .select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status, AllergenConflictFlag')
+    .select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status, AllergenConflictFlag, NextFulfillmentDate')
     .eq('CustomerID', Number(customer.id))
     .order('MealPrepOrderID', { ascending: false })
   if (error) return { ok: false as const, error: error.message, orders: [], items: [] }
@@ -165,6 +176,10 @@ export async function createBooking(bookingDetails: BookingDetails, items: Booki
   const allergenNamesById = new Map((allergyTags ?? []).map((tag) => [Number(tag.AllergyTagID), String(tag.AllergenName).trim().toLowerCase()]))
   const customerAllergenNames = new Set((customerAllergies ?? []).map((allergy) => allergenNamesById.get(Number(allergy.AllergyTagID))).filter(Boolean))
   const hasAllergenConflict = (menuItemAllergies ?? []).some((allergy) => customerAllergenNames.has(allergenNamesById.get(Number(allergy.AllergyTagID)) ?? ''))
+  const operatorId = 2
+  if (hasAllergenConflict) {
+    await createNotification(operatorId, 'allergen_conflict', `A customer attempted a booking with an allergen conflict.`, {})
+  }
 
   const eventDate = String(bookingDetails.eventDate ?? '').trim()
 const eventTime = String(bookingDetails.eventTime ?? '').trim()
@@ -199,6 +214,85 @@ if (!Number.isFinite(guestCount) || guestCount <= 0) {
   }
 }
 
+const [{ data: operatorSettingsRow, error: settingsError }, { data: existingBookingRows, error: existingBookingsError }] = await Promise.all([
+  admin
+    .from('OPERATOR_SETTINGS')
+    .select('OperatorID, DayOfWeek, OperatingStartTime, OperatingEndTime, MaxCateringEventsPerDay, MaxMealPrepOrdersPerDay, MaxGuestCountPerEvent')
+    .eq('OperatorID', operatorId),
+  admin
+    .from('BOOKING')
+    .select('BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status')
+    .eq('EventDate', eventDate)
+    .in('Status', ['pending', 'confirmed']),
+])
+
+if (settingsError) return { ok: false as const, error: settingsError.message }
+if (existingBookingsError) return { ok: false as const, error: existingBookingsError.message }
+if (!operatorSettingsRow?.length) return { ok: false as const, error: 'Operator booking settings are unavailable.' }
+
+const maxEventsPerDay = {} as OperatorSettings['maxEventsPerDay']
+const maxMealPrepFulfillmentsPerDay = {} as OperatorSettings['maxMealPrepFulfillmentsPerDay']
+
+for (const row of operatorSettingsRow) {
+  const day = Number(row.DayOfWeek) as DayOfWeek
+  maxEventsPerDay[day] = Number(row.MaxCateringEventsPerDay ?? 0)
+  maxMealPrepFulfillmentsPerDay[day] = Number(row.MaxMealPrepOrdersPerDay ?? 0)
+}
+
+const settings: OperatorSettings = {
+  operatingDays: Object.keys(maxEventsPerDay).map(Number) as DayOfWeek[],
+  operatingHoursStart: String(operatorSettingsRow[0].OperatingStartTime),
+  operatingHoursEnd: String(operatorSettingsRow[0].OperatingEndTime),
+  maxEventsPerDay,
+  maxGuestsPerEvent: Number(operatorSettingsRow[0].MaxGuestCountPerEvent),
+  maxMealPrepFulfillmentsPerDay,
+}
+
+const candidateBooking = {
+  id: 'new-booking',
+  customerId: String(customerId),
+  customerName: '',
+  customerEmail: '',
+  orderType: 'catering',
+  eventDate,
+  eventTime,
+  eventType: '',
+  venue,
+  guestCount,
+  specialRequests: '',
+  status: 'pending',
+  selectedMenuItemIds: selectedMenuItemIds.map(String),
+  dietaryRestrictions: [],
+  eventProfileId: '',
+  totalCost: 0,
+  paymentsReceived: 0,
+  createdAt: new Date().toISOString(),
+  validationPassed: false,
+  ruleViolations: [],
+} satisfies Booking
+
+const validation = validateBooking(
+  candidateBooking,
+  settings,
+  (existingBookingRows ?? []).map((row) => ({
+    ...candidateBooking,
+    id: String(row.BookingID),
+    customerId: String(row.CustomerID),
+    eventDate: String(row.EventDate),
+    eventTime: String(row.EventTime),
+    venue: String(row.Venue),
+    guestCount: Number(row.GuestCount),
+    status: String(row.Status) as Booking['status'],
+  })),
+  [],
+  [],
+)
+
+if (!validation.valid) {
+  await createNotification(operatorId, 'capacity_conflict', `A booking attempt for ${eventDate} at ${eventTime} was blocked: ${validation.failures.map((failure) => failure.message).join(' ')}`)
+  return { ok: false as const, error: validation.failures.map((failure) => failure.message).join(' ') }
+}
+
 const { data: booking, error } = await admin
   .from('BOOKING')
   .insert({
@@ -215,6 +309,8 @@ const { data: booking, error } = await admin
   .single()
 
   if (error || !booking) return { ok: false as const, error: error?.message ?? 'Unable to retrieve the booking ID.' }
+
+  await createNotification(operatorId, 'new_booking', `New booking request for ${eventDate} at ${eventTime}.`, { bookingId: booking.BookingID })
 
   const { error: itemError } = await admin.from('BOOKING_ITEM').insert(items.map((item) => ({ BookingID: booking.BookingID, MenuItemID: Number(item.MenuItemID), Quantity: Number(item.Quantity ?? 1) })))
   if (itemError) {
@@ -254,6 +350,43 @@ export async function getOwnerBookings() {
   return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [] }
 }
 
+export async function getOwnerPrepSchedule() {
+  const owner = await requireRole('owner')
+  if (!owner) {
+    return { ok: false as const, error: 'Owner access required.', bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  }
+
+  const admin = createAdminClient()
+  const operatorId = Number(owner.id)
+  const [{ data: bookings, error: bookingError }, { data: mealPrepOrders, error: mealPrepError }] = await Promise.all([
+    admin.from('BOOKING').select('BookingID, CustomerID, EventDate, EventTime, Venue, GuestCount, Status').eq('OperatorID', operatorId).eq('Status', 'confirmed'),
+    admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate, Status').eq('OperatorID', operatorId).eq('Status', 'active'),
+  ])
+
+  if (bookingError) return { ok: false as const, error: bookingError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  if (mealPrepError) return { ok: false as const, error: mealPrepError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+
+  const bookingIds = (bookings ?? []).map((booking) => booking.BookingID)
+  const mealPrepOrderIds = (mealPrepOrders ?? []).map((order) => order.MealPrepOrderID)
+  const [{ data: bookingItems, error: bookingItemsError }, { data: mealPrepItems, error: mealPrepItemsError }] = await Promise.all([
+    bookingIds.length > 0 ? admin.from('BOOKING_ITEM').select('BookingItemID, BookingID, MenuItemID, Quantity').in('BookingID', bookingIds) : Promise.resolve({ data: [], error: null }),
+    mealPrepOrderIds.length > 0 ? admin.from('MEAL_PREP_ITEM').select('MealPrepItemID, MealPrepOrderID, MenuItemID, Quantity').in('MealPrepOrderID', mealPrepOrderIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  if (bookingItemsError) return { ok: false as const, error: bookingItemsError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  if (mealPrepItemsError) return { ok: false as const, error: mealPrepItemsError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+
+  const customerIds = Array.from(new Set([...((bookings ?? []).map((booking) => booking.CustomerID)), ...((mealPrepOrders ?? []).map((order) => order.CustomerID))].filter((id): id is number => id !== null)))
+  const menuItemIds = Array.from(new Set([...((bookingItems ?? []).map((item) => item.MenuItemID)), ...((mealPrepItems ?? []).map((item) => item.MenuItemID))]))
+  const [{ data: customers, error: customerError }, { data: menuItems, error: menuItemError }] = await Promise.all([
+    customerIds.length > 0 ? admin.from('CUSTOMER').select('CustomerID, Name').in('CustomerID', customerIds) : Promise.resolve({ data: [], error: null }),
+    menuItemIds.length > 0 ? admin.from('MENU_ITEM').select('MenuItemID, ItemName, PrepTimeDays').in('MenuItemID', menuItemIds) : Promise.resolve({ data: [], error: null }),
+  ])
+  if (customerError) return { ok: false as const, error: customerError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  if (menuItemError) return { ok: false as const, error: menuItemError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+
+  return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [], customers: customers ?? [], menuItems: menuItems ?? [] }
+}
+
 export async function updateBookingStatus(bookingId: number, newStatus: 'confirmed' | 'rejected') {
   const owner = await requireRole('owner')
   if (!owner) return { ok: false as const, error: 'Owner access required.' }
@@ -264,6 +397,29 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
   if (!booking || booking.OperatorID !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this booking.' }
 
   const { error } = await admin.from('BOOKING').update({ Status: newStatus }).eq('BookingID', bookingId)
+  if (error) return { ok: false as const, error: error.message }
+  return { ok: true as const }
+}
+
+export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStatus: 'active' | 'rejected') {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.' }
+
+  const admin = createAdminClient()
+  const { data: mealPrepOrder, error: fetchError } = await admin
+    .from('MEAL_PREP_ORDER')
+    .select('MealPrepOrderID, OperatorID')
+    .eq('MealPrepOrderID', mealPrepOrderId)
+    .maybeSingle()
+  if (fetchError) return { ok: false as const, error: fetchError.message }
+  if (!mealPrepOrder || mealPrepOrder.OperatorID !== Number(owner.id)) {
+    return { ok: false as const, error: 'You are not authorized to update this meal-prep order.' }
+  }
+
+  const { error } = await admin
+    .from('MEAL_PREP_ORDER')
+    .update({ Status: newStatus })
+    .eq('MealPrepOrderID', mealPrepOrderId)
   if (error) return { ok: false as const, error: error.message }
   return { ok: true as const }
 }
