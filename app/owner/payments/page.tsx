@@ -511,7 +511,8 @@ export default function PaymentsPage() {
                         <td className="p-6">
                           <div className="flex gap-2">
                             {/* Record Payment */}
-                            {bookingOutstanding > 0 &&
+                            {booking.status === 'confirmed' &&
+                              bookingOutstanding > 0 &&
                               invoice && (
                                 <Button
                                   size="sm"

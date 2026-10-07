@@ -425,8 +425,9 @@ export async function recordOwnerPayment(input: { invoiceId: number; amount: num
   const { data: invoice, error: invoiceError } = await admin.from('INVOICE').select('InvoiceID, BookingID, TotalAmount').eq('InvoiceID', input.invoiceId).maybeSingle()
   if (invoiceError || !invoice) return { ok: false as const, error: 'Invoice not found.' }
 
-  const { data: booking, error: bookingError } = await admin.from('BOOKING').select('BookingID, OperatorID').eq('BookingID', invoice.BookingID).maybeSingle()
+  const { data: booking, error: bookingError } = await admin.from('BOOKING').select('BookingID, OperatorID, Status').eq('BookingID', invoice.BookingID).maybeSingle()
   if (bookingError || !booking || booking.OperatorID !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to record this payment.' }
+  if (booking.Status !== 'confirmed') return { ok: false as const, error: 'Payments can only be recorded against confirmed bookings.' }
 
   const { data: existingPayments, error: paymentsError } = await admin.from('PAYMENT').select('Amount').eq('InvoiceID', input.invoiceId)
   if (paymentsError) return { ok: false as const, error: 'Could not validate the outstanding balance.' }
@@ -446,6 +447,42 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
   const { data: booking, error: fetchError } = await admin.from('BOOKING').select('BookingID, OperatorID').eq('BookingID', bookingId).maybeSingle()
   if (fetchError) return { ok: false as const, error: fetchError.message }
   if (!booking || booking.OperatorID !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this booking.' }
+
+  if (newStatus === 'confirmed') {
+    const { data: existingInvoice, error: invoiceLookupError } = await admin
+      .from('INVOICE')
+      .select('InvoiceID')
+      .eq('BookingID', bookingId)
+      .maybeSingle()
+    if (invoiceLookupError) return { ok: false as const, error: invoiceLookupError.message }
+
+    if (!existingInvoice) {
+      const { data: bookingItems, error: bookingItemsError } = await admin
+        .from('BOOKING_ITEM')
+        .select('MenuItemID, Quantity')
+        .eq('BookingID', bookingId)
+      if (bookingItemsError) return { ok: false as const, error: bookingItemsError.message }
+
+      const menuItemIds = Array.from(new Set((bookingItems ?? []).map((item) => Number(item.MenuItemID)).filter(Number.isFinite)))
+      const { data: menuItems, error: menuItemsError } = menuItemIds.length > 0
+        ? await admin.from('MENU_ITEM').select('MenuItemID, Price').in('MenuItemID', menuItemIds)
+        : { data: [], error: null }
+      if (menuItemsError) return { ok: false as const, error: menuItemsError.message }
+
+      const pricesByMenuItemId = new Map((menuItems ?? []).map((item) => [Number(item.MenuItemID), Number(item.Price ?? 0)]))
+      const totalAmount = (bookingItems ?? []).reduce(
+        (sum, item) => sum + (pricesByMenuItemId.get(Number(item.MenuItemID)) ?? 0) * Number(item.Quantity ?? 0),
+        0,
+      )
+
+      const { error: invoiceInsertError } = await admin.from('INVOICE').insert({
+        BookingID: bookingId,
+        TotalAmount: totalAmount,
+        DateGenerated: new Date().toISOString(),
+      })
+      if (invoiceInsertError) return { ok: false as const, error: invoiceInsertError.message }
+    }
+  }
 
   const { error } = await admin.from('BOOKING').update({ Status: newStatus }).eq('BookingID', bookingId)
   if (error) return { ok: false as const, error: error.message }
