@@ -1,7 +1,7 @@
 'use client';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
-import { supabase } from '@/lib/supabase';
+import { getOwnerFinancialData, recordOwnerPayment } from '@/app/actions/booking-actions';
 import type { PaymentType, Invoice, Payment } from '@/lib/types';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -91,62 +91,15 @@ export default function PaymentsPage() {
     setError('');
 
     try {
-      // 1. Load bookings
-      const { data: bookingRows, error: bookingError } = await supabase
-        .from('BOOKING')
-        .select(
-          'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status'
-        )
-        .eq('OperatorID', 2)
-        .order('EventDate', { ascending: false });
+      const result = await getOwnerFinancialData();
+      if (!result.ok) throw new Error(result.error);
 
-      if (bookingError) throw bookingError;
-
-      // 2. Load customers
-      const { data: customerRows, error: customerError } = await supabase
-        .from('CUSTOMER')
-        .select('CustomerID, Name, Email');
-
-      if (customerError) throw customerError;
-
-      // 3. Load invoices
-      const { data: invoiceRows, error: invoiceError } = await supabase
-        .from('INVOICE')
-        .select('InvoiceID, BookingID, TotalAmount, DateGenerated');
-
-      if (invoiceError) throw invoiceError;
-
-      // 4. Load payments
-      const { data: paymentRows, error: paymentError } = await supabase
-        .from('PAYMENT')
-        .select(
-          'PaymentID, InvoiceID, Amount, PaymentType, Status, DatePaid'
-        )
-        .order('DatePaid', { ascending: false });
-
-      if (paymentError) throw paymentError;
-
-      // 5. Load booking items
-      const { data: bookingItemRows, error: bookingItemError } =
-        await supabase
-          .from('BOOKING_ITEM')
-          .select('BookingItemID, BookingID, MenuItemID, Quantity');
-
-      if (bookingItemError) throw bookingItemError;
-
-      // 6. Load menu items
-      const { data: menuItemRows, error: menuItemError } = await supabase
-        .from('MENU_ITEM')
-        .select('MenuItemID, ItemName, Price');
-
-      if (menuItemError) throw menuItemError;
-
-      const typedBookings = (bookingRows ?? []) as BookingRow[];
-      const typedCustomers = (customerRows ?? []) as CustomerRow[];
-      const typedInvoices = (invoiceRows ?? []) as InvoiceRow[];
-      const typedPayments = (paymentRows ?? []) as PaymentRow[];
-      const typedBookingItems = (bookingItemRows ?? []) as BookingItemRow[];
-      const typedMenuItems = (menuItemRows ?? []) as MenuItemRow[];
+      const typedBookings = result.bookings as BookingRow[];
+      const typedCustomers = result.customers as CustomerRow[];
+      const typedInvoices = result.invoices as InvoiceRow[];
+      const typedPayments = result.payments as PaymentRow[];
+      const typedBookingItems = result.bookingItems as BookingItemRow[];
+      const typedMenuItems = result.menuItems as MenuItemRow[];
 
       // Convert PAYMENT database rows into UI Payment type
       const mappedPayments: Payment[] = typedPayments.map((payment) => {
@@ -307,21 +260,14 @@ export default function PaymentsPage() {
       return;
     }
 
-    const { error: paymentError } = await supabase
-      .from('PAYMENT')
-      .insert({
-        InvoiceID: paymentForm.invoiceId,
-        Amount: paymentForm.amount,
-        PaymentType: paymentForm.type,
-        Status: 'paid',
-        DatePaid: new Date().toISOString(),
-      });
+    const paymentResult = await recordOwnerPayment({
+      invoiceId: paymentForm.invoiceId,
+      amount: paymentForm.amount,
+      type: paymentForm.type,
+    });
 
-    if (paymentError) {
-      console.error('Failed to record payment:', paymentError);
-      setError(
-        paymentError.message || 'Failed to record payment.'
-      );
+    if (!paymentResult.ok) {
+      setError(paymentResult.error);
       return;
     }
 
