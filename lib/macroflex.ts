@@ -1,4 +1,6 @@
 import { supabase } from './supabase'
+import { createAdminClient } from './supabase-admin'
+import { prepStartDate } from './rules/mealPrep'
 
 /**
  * MacroFlex: Core logic for menu sufficiency, over-purchase detection, and scrap-based suggestions.
@@ -18,12 +20,17 @@ export interface IngredientShortfall {
   available: number
   shortBy: number
   unitOfMeasure: string
+  allocated: number
 }
 
 export interface SufficiencyCheckResult {
   sufficient: boolean
   hasNoIngredients: boolean
   shortfalls: IngredientShortfall[]
+}
+
+export interface SufficiencyContext {
+  allocatedByIngredient?: Record<number, number>
 }
 
 export interface OverPurchasedIngredient {
@@ -40,6 +47,7 @@ export interface OverPurchaseCheckResult {
 
 export interface ScrapSuggestion {
   menuItemId: number
+  blockedMenuItemId: number
   itemName: string
   category: string
   price: number
@@ -61,9 +69,70 @@ export interface ScrapSuggestionResult {
  * @param quantity Number of servings to prepare (default 1).
  * @returns SufficiencyCheckResult with status and shortfalls.
  */
+export async function getAllocatedIngredients(
+  operatorId: number,
+  windowStart: Date,
+  windowEnd: Date,
+  excludeCommitment?: string,
+): Promise<Map<number, number>> {
+  const admin = createAdminClient()
+  const start = windowStart.getTime()
+  const end = windowEnd.getTime()
+  const allocations = new Map<number, number>()
+
+  const [{ data: bookings, error: bookingError }, { data: orders, error: orderError }] = await Promise.all([
+    admin.from('BOOKING').select('BookingID, EventDate').eq('OperatorID', operatorId).eq('Status', 'confirmed'),
+    admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate').eq('OperatorID', operatorId).eq('Status', 'active').not('NextFulfillmentDate', 'is', null),
+  ])
+  if (bookingError) throw bookingError
+  if (orderError) throw orderError
+
+  const bookingIds = (bookings ?? []).map((booking) => Number(booking.BookingID))
+  const orderIds = (orders ?? []).map((order) => Number(order.MealPrepOrderID))
+  const [{ data: bookingItems, error: bookingItemsError }, { data: mealPrepItems, error: mealPrepItemsError }] = await Promise.all([
+    bookingIds.length ? admin.from('BOOKING_ITEM').select('BookingID, MenuItemID, Quantity').in('BookingID', bookingIds) : { data: [], error: null },
+    orderIds.length ? admin.from('MEAL_PREP_ITEM').select('MealPrepOrderID, MenuItemID, Quantity').in('MealPrepOrderID', orderIds) : { data: [], error: null },
+  ])
+  if (bookingItemsError) throw bookingItemsError
+  if (mealPrepItemsError) throw mealPrepItemsError
+
+  const menuIds = [...new Set([...(bookingItems ?? []), ...(mealPrepItems ?? [])].map((item) => Number(item.MenuItemID)))]
+  const [{ data: dishIngredients, error: dishError }, { data: menuItems, error: menuError }] = await Promise.all([
+    menuIds.length ? admin.from('DISH_INGREDIENT').select('MenuItemID, IngredientID, QuantityRequiredPerServing').in('MenuItemID', menuIds) : { data: [], error: null },
+    menuIds.length ? admin.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuIds) : { data: [], error: null },
+  ])
+  if (dishError) throw dishError
+  if (menuError) throw menuError
+  const prepDaysByMenu = new Map((menuItems ?? []).map((item) => [Number(item.MenuItemID), Number(item.PrepTimeDays ?? 0)]))
+
+  const ingredientsByMenu = new Map<number, typeof dishIngredients>()
+  for (const row of dishIngredients ?? []) {
+    const rows = ingredientsByMenu.get(Number(row.MenuItemID)) ?? []
+    rows.push(row)
+    ingredientsByMenu.set(Number(row.MenuItemID), rows)
+  }
+  const addItems = (items: Array<{ MenuItemID: number; Quantity: number }>, commitment: string, fulfillment: string) => {
+    if (excludeCommitment === commitment) return
+    const fulfillmentDate = new Date(`${fulfillment.slice(0, 10)}T12:00:00`)
+    const menuDates = items.map((item) => prepStartDate(fulfillment, prepDaysByMenu.get(Number(item.MenuItemID)) ?? 0))
+    const prepStart = menuDates.length ? new Date(Math.min(...menuDates.map((date) => date.getTime()))) : fulfillmentDate
+    if (prepStart.getTime() > end || fulfillmentDate.getTime() < start) return
+    for (const item of items) {
+      for (const ingredient of ingredientsByMenu.get(Number(item.MenuItemID)) ?? []) {
+        const id = Number(ingredient.IngredientID)
+        allocations.set(id, (allocations.get(id) ?? 0) + Number(ingredient.QuantityRequiredPerServing ?? 0) * Number(item.Quantity ?? 0))
+      }
+    }
+  }
+  for (const booking of bookings ?? []) addItems((bookingItems ?? []).filter((item) => Number(item.BookingID) === Number(booking.BookingID)), `booking:${booking.BookingID}`, String(booking.EventDate))
+  for (const order of orders ?? []) addItems((mealPrepItems ?? []).filter((item) => Number(item.MealPrepOrderID) === Number(order.MealPrepOrderID)), `mealPrep:${order.MealPrepOrderID}`, String(order.NextFulfillmentDate))
+  return allocations
+}
+
 export async function checkSufficiency(
   menuItemId: number,
-  quantity: number = 1
+  quantity: number = 1,
+  context: SufficiencyContext = {}
 ): Promise<SufficiencyCheckResult> {
   try {
     // Query DISH_INGREDIENT joined with INGREDIENT to get current stock and requirements.
@@ -108,7 +177,7 @@ export async function checkSufficiency(
       }
 
       // Treat NULL CurrentStock as 0.
-      const available = ingredient.CurrentStock ?? 0
+      const available = Math.max(0, (ingredient.CurrentStock ?? 0) - (context.allocatedByIngredient?.[Number(row.IngredientID)] ?? 0))
       const required = (row.QuantityRequiredPerServing ?? 0) * quantity
 
       if (available < required) {
@@ -119,6 +188,7 @@ export async function checkSufficiency(
           available,
           shortBy: required - available,
           unitOfMeasure: ingredient.UnitOfMeasure,
+          allocated: context.allocatedByIngredient?.[Number(row.IngredientID)] ?? 0,
         })
       }
     }
@@ -233,6 +303,7 @@ export async function getScrapBasedSuggestions(
         if (check.sufficient && !check.hasNoIngredients) {
           alternatives.push({
             menuItemId: item.MenuItemID,
+            blockedMenuItemId: failedMenuItemId,
             itemName: item.ItemName,
             category: item.Category,
             price: item.Price,

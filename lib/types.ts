@@ -54,7 +54,7 @@ export interface MenuItem {
     qty: number;
     unit: string;
   }>;
-  inventoryStatus: 'available' | 'limited' | 'insufficient';
+  inventoryStatus: 'available' | 'insufficient';
 }
 
 // Event Profile Types

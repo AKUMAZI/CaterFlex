@@ -159,7 +159,7 @@ export const mockMenuItems: MenuItem[] = [
     requiredIngredients: [
       { id: 'ing-8', name: 'Shrimp', qty: 150, unit: 'g' },
     ],
-    inventoryStatus: 'limited',
+    inventoryStatus: 'available',
   },
   {
     id: 'menu-8',
@@ -188,7 +188,7 @@ export const mockMenuItems: MenuItem[] = [
       { id: 'ing-10', name: 'Beef Tenderloin', qty: 300, unit: 'g' },
       { id: 'ing-1', name: 'Butter', qty: 60, unit: 'g' },
     ],
-    inventoryStatus: 'limited',
+    inventoryStatus: 'available',
   },
   {
     id: 'menu-10',

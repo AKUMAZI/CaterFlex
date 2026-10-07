@@ -1,6 +1,6 @@
 import type { Ingredient, MenuItem } from '../types';
 
-export type DishAvailability = 'available' | 'limited' | 'insufficient';
+export type DishAvailability = 'available' | 'insufficient';
 
 export interface DishStockCheck {
   status: DishAvailability;
@@ -44,16 +44,10 @@ export function checkDishStock(menuItem: MenuItem, ingredients: Ingredient[]): D
     .filter(Boolean) as DishStockCheck['shortfalls'];
 
   if (shortfalls.length === 0) {
-    const barelyEnough = menuItem.requiredIngredients.some((req) => {
-      const stock = getIngredientStock(ingredients, req.id);
-      if (!stock) return false;
-      return stock.currentStock < req.qty * 2;
-    });
-    return { status: barelyEnough ? 'limited' : 'available', shortfalls: [] };
+    return { status: 'available', shortfalls: [] };
   }
 
-  const anyStock = shortfalls.some((s) => s.available > 0);
-  return { status: anyStock ? 'limited' : 'insufficient', shortfalls };
+  return { status: 'insufficient', shortfalls };
 }
 
 export function isOverPurchased(ingredient: Ingredient): boolean {

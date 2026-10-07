@@ -293,7 +293,6 @@ export default function MenuPage() {
            */
           let inventoryStatus:
             | 'available'
-            | 'limited'
             | 'insufficient' =
             'available';
 
@@ -332,10 +331,7 @@ export default function MenuPage() {
             }
 
             if (hasShortfall) {
-              inventoryStatus =
-                hasSomeStock
-                  ? 'limited'
-                  : 'insufficient';
+              inventoryStatus = 'insufficient';
             } else {
               inventoryStatus =
                 'available';
@@ -776,9 +772,6 @@ export default function MenuPage() {
                                   item.inventoryStatus ===
                                   'available'
                                     ? 'text-green-600'
-                                    : item.inventoryStatus ===
-                                      'limited'
-                                    ? 'text-yellow-600'
                                     : 'text-red-600'
                                 }
                               >
