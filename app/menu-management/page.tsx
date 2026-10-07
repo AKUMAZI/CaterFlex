@@ -80,7 +80,7 @@ export default function MenuManagementPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [formItem, setFormItem] = useState<FormMenuItem | null>(null)
-
+  
   useEffect(() => {
     async function loadMenu() {
       setLoading(true)
@@ -178,6 +178,7 @@ export default function MenuManagementPage() {
       requiredIngredients: [],
       inventoryStatus: 'available',
     })
+  
     setFormOpen(true)
   }
 
@@ -208,7 +209,16 @@ export default function MenuManagementPage() {
             <h1 className="text-3xl font-semibold tracking-tight">Menu Management</h1>
             <p className="mt-1 text-muted-foreground">Review menu availability against current ingredient stock.</p>
           </div>
-          <div className="flex items-center gap-3"><div className="flex items-center gap-2 text-sm text-muted-foreground"><UtensilsCrossed className="size-4" />{menuItems.length} menu items</div><Button onClick={() => setFormOpen(true)}>Add menu item</Button></div>
+          <div className="flex items-center gap-3"><div className="flex items-center gap-2 text-sm text-muted-foreground"><UtensilsCrossed className="size-4" />{menuItems.length} menu items</div>
+          <Button
+            onClick={() => {
+              setFormItem(null)
+              setFormOpen(true)
+            }}
+          >
+            Add menu item
+          </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
@@ -231,7 +241,14 @@ export default function MenuManagementPage() {
 
         {false && selectedItem && <Card className="scroll-mt-6" id="menu-item-detail"><CardHeader className="border-b"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle>{(selectedItem as MenuItem).ItemName}</CardTitle><CardDescription className="mt-2 capitalize">{(selectedItem as MenuItem).Category} · {formatPrice((selectedItem as MenuItem).Price)} · {(selectedItem as MenuItem).PrepTimeDays} prep {(selectedItem as MenuItem).PrepTimeDays === 1 ? 'day' : 'days'}</CardDescription></div><Button variant="outline" size="sm" onClick={() => setSelectedId(null)}>Close</Button></div><div className={selectedStatus === 'available' ? 'flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800' : 'flex items-center gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive'}>{selectedStatus === 'available' ? <CheckCircle2 className="size-4" /> : <AlertTriangle className="size-4" />}<span className="font-medium">{selectedStatus === 'available' ? 'Available' : `Insufficient Stock — missing: ${missingNames.join(', ')}`}</span></div></CardHeader><CardContent className="flex flex-col gap-6 pt-6"><div><p className="mb-1 text-sm font-medium">Description</p><p className="text-sm leading-6 text-muted-foreground">{(selectedItem as MenuItem).Description || 'No description recorded for this item.'}</p></div><div><h3 className="mb-3 text-base font-semibold">Ingredients Required (per serving)</h3>{selectedRows.length === 0 ? <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">No ingredients recorded for this item.</div> : <div className="overflow-x-auto rounded-md border"><table className="w-full text-sm"><thead className="bg-muted/40 text-left text-muted-foreground"><tr><th className="px-4 py-3 font-medium">Ingredient Name</th><th className="px-4 py-3 font-medium">Quantity Required</th><th className="px-4 py-3 font-medium">Unit</th><th className="px-4 py-3 font-medium">Current Stock</th><th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody>{selectedRows.map((row) => { const stock = row.CurrentStock ?? 0; const sufficient = stock >= row.QuantityRequiredPerServing; return <tr key={row.DishIngredientID} className="border-t"><td className="px-4 py-3 font-medium">{row.IngredientName}</td><td className="px-4 py-3">{formatNumber(row.QuantityRequiredPerServing)}</td><td className="px-4 py-3 text-muted-foreground">{row.UnitOfMeasure}</td><td className="px-4 py-3">{formatNumber(stock)}</td><td className="px-4 py-3">{sufficient ? <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Sufficient</Badge> : <Badge variant="destructive">Insufficient · short {formatNumber(row.QuantityRequiredPerServing - stock)} {row.UnitOfMeasure}</Badge>}</td></tr> })}</tbody></table></div>}</div></CardContent></Card>}
       </div>
-      <MenuItemForm open={formOpen} item={formItem} onClose={() => { setFormOpen(false); setFormItem(null); window.location.reload() }} />
+      <MenuItemForm
+        open={formOpen}
+        item={formItem}
+        onClose={() => {
+          setFormOpen(false)
+          setFormItem(null)
+        }}
+      />
     </DashboardLayout>
   )
 }
