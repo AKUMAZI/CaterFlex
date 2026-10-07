@@ -209,7 +209,8 @@ export default function MenuManagementPage() {
             <h1 className="text-3xl font-semibold tracking-tight">Menu Management</h1>
             <p className="mt-1 text-muted-foreground">Review menu availability against current ingredient stock.</p>
           </div>
-          <div className="flex items-center gap-3"><div className="flex items-center gap-2 text-sm text-muted-foreground"><UtensilsCrossed className="size-4" />{menuItems.length} menu items</div>
+          <div className="flex items-center gap-3"><div className="flex items-center gap-2 text-sm text-muted-foreground">
+            </div>
           <Button
             onClick={() => {
               setFormItem(null)
