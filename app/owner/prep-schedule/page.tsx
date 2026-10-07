@@ -57,14 +57,16 @@ type MealPrepItem = {
 
 type CateringPrepItem = {
   id: string;
-  itemName: string;
   customerName: string;
   eventDate: Date;
-  prepStartDate: Date;
-  prepDays: number;
-  quantity: number;
   venue: string;
   eventTime: string;
+  lineItems: Array<{
+    itemName: string;
+    prepStartDate: Date;
+    prepDays: number;
+    quantity: number;
+  }>;
 };
 
 type MealPrepDisplayItem = {
@@ -122,83 +124,40 @@ export default function PrepSchedulePage() {
         // ========================================================
 
         const cateringPrepItems: CateringPrepItem[] =
-          [];
-
-        bookings.forEach((booking) => {
-          const bookingItemsForBooking =
-            bookingItems.filter(
-              (item) =>
-                item.BookingID ===
-                booking.BookingID
+          bookings.map((booking) => {
+            const customer = customers.find(
+              (item) => item.CustomerID === booking.CustomerID
             );
-
-          const customer =
-            customers.find(
-              (item) =>
-                item.CustomerID ===
-                booking.CustomerID
-            );
-
-          bookingItemsForBooking.forEach(
-            (bookingItem) => {
-              const menuItem =
-                menuItems.find(
-                  (item) =>
-                    item.MenuItemID ===
-                    bookingItem.MenuItemID
+            const eventDate = new Date(`${booking.EventDate}T00:00:00`);
+            const lineItems = bookingItems
+              .filter((item) => item.BookingID === booking.BookingID)
+              .flatMap((bookingItem) => {
+                const menuItem = menuItems.find(
+                  (item) => item.MenuItemID === bookingItem.MenuItemID
                 );
+                if (!menuItem) return [];
 
-              if (!menuItem) {
-                return;
-              }
+                const prepDays = Number(menuItem.PrepTimeDays ?? 0);
+                const prepStartDate = new Date(eventDate);
+                prepStartDate.setDate(prepStartDate.getDate() - prepDays);
 
-              const eventDate = new Date(
-                `${booking.EventDate}T00:00:00`
-              );
-
-              const prepDays =
-                Number(
-                  menuItem.PrepTimeDays ?? 0
-                );
-
-              const prepStartDate =
-                new Date(eventDate);
-
-              prepStartDate.setDate(
-                prepStartDate.getDate() -
-                  prepDays
-              );
-
-              cateringPrepItems.push({
-                id: `catering-${booking.BookingID}-${bookingItem.BookingItemID}`,
-
-                itemName:
-                  menuItem.ItemName,
-
-                customerName:
-                  customer?.Name ??
-                  'Unknown customer',
-
-                eventDate,
-
-                prepStartDate,
-
-                prepDays,
-
-                quantity:
-                  bookingItem.Quantity,
-
-                venue:
-                  booking.Venue ??
-                  'No venue provided',
-
-                eventTime:
-                  booking.EventTime ??
-                  '',
+                return [{
+                  itemName: menuItem.ItemName,
+                  prepStartDate,
+                  prepDays,
+                  quantity: bookingItem.Quantity,
+                }];
               });
-            }
-          );
-        });
+
+            return {
+              id: `catering-${booking.BookingID}`,
+              customerName: customer?.Name ?? 'Unknown customer',
+              eventDate,
+              venue: booking.Venue ?? 'No venue provided',
+              eventTime: booking.EventTime ?? '',
+              lineItems,
+            };
+          }).filter((booking) => booking.lineItems.length > 0);
 
         // ========================================================
         // 10. BUILD RECURRING MEAL PREP SCHEDULE
@@ -295,17 +254,20 @@ export default function PrepSchedulePage() {
 
   today.setHours(0, 0, 0, 0);
 
-  const upcomingCateringPrep =
-    cateringPrep
-      .filter(
-        (item) =>
-          item.prepStartDate >= today
-      )
-      .sort(
-        (a, b) =>
-          a.prepStartDate.getTime() -
-          b.prepStartDate.getTime()
-      );
+  const upcomingCateringPrep = cateringPrep
+    .map((item) => ({
+      ...item,
+      earliestPrepStartDate: item.lineItems.reduce(
+        (earliest, lineItem) =>
+          lineItem.prepStartDate < earliest ? lineItem.prepStartDate : earliest,
+        item.lineItems[0].prepStartDate
+      ),
+    }))
+    .filter((item) => item.earliestPrepStartDate >= today)
+    .sort(
+      (a, b) =>
+        a.earliestPrepStartDate.getTime() - b.earliestPrepStartDate.getTime()
+    );
 
   const scheduledMealPrep = [...mealPrep].sort((a, b) => {
     const dateA = a.nextFulfillmentDate
@@ -423,15 +385,10 @@ export default function PrepSchedulePage() {
 
                   {upcomingCateringPrep.map(
                     (item) => {
-                      const daysUntilPrep =
-                        Math.ceil(
-                          (item.prepStartDate.getTime() -
-                            today.getTime()) /
-                            (1000 *
-                              60 *
-                              60 *
-                              24)
-                        );
+                      const daysUntilPrep = Math.ceil(
+                        (item.earliestPrepStartDate.getTime() - today.getTime()) /
+                          (1000 * 60 * 60 * 24)
+                      );
 
                       const isUrgent =
                         daysUntilPrep <= 2;
@@ -450,12 +407,19 @@ export default function PrepSchedulePage() {
 
                             <div>
                               <p className="font-semibold text-card-foreground">
-                                {item.itemName}
-
-                                {item.quantity >
-                                  1 &&
-                                  ` × ${item.quantity}`}
+                                Catering preparation
                               </p>
+
+                              <ul className="mt-3 flex flex-col gap-2">
+                                {item.lineItems.map((lineItem) => (
+                                  <li key={`${item.id}-${lineItem.itemName}`} className="text-sm text-card-foreground">
+                                    {lineItem.itemName}{lineItem.quantity > 1 ? ` × ${lineItem.quantity}` : ''}
+                                    <span className="block text-xs text-muted-foreground mt-1">
+                                      Start prep: {lineItem.prepStartDate.toLocaleDateString()} · Prep time: {lineItem.prepDays} {lineItem.prepDays === 1 ? 'day' : 'days'}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
 
                               <p className="text-sm text-muted-foreground mt-1">
                                 For{' '}
@@ -492,7 +456,7 @@ export default function PrepSchedulePage() {
                                 }`}
                               >
                                 Start:{' '}
-                                {item.prepStartDate.toLocaleDateString()}
+                                {item.earliestPrepStartDate.toLocaleDateString()}
                               </p>
 
                               <p className="text-sm text-muted-foreground mt-1">
@@ -500,14 +464,6 @@ export default function PrepSchedulePage() {
                                 {item.eventDate.toLocaleDateString()}
                               </p>
 
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Prep time:{' '}
-                                {item.prepDays}{' '}
-                                {item.prepDays ===
-                                1
-                                  ? 'day'
-                                  : 'days'}
-                              </p>
 
                             </div>
 
