@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
   const { data: mealPrepOrders, error: mealPrepError } = await admin
     .from('MEAL_PREP_ORDER')
     .select('MealPrepOrderID, OperatorID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate')
+    // Paused and cancelled orders are intentionally excluded from prep checks and notifications.
     .eq('Status', 'active')
     .not('NextFulfillmentDate', 'is', null)
     .lte('NextFulfillmentDate', today.toISOString().slice(0, 10))

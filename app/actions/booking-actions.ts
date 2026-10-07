@@ -387,6 +387,58 @@ export async function getOwnerPrepSchedule() {
   return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [], customers: customers ?? [], menuItems: menuItems ?? [] }
 }
 
+export async function getOwnerFinancialData() {
+  const owner = await requireRole('owner')
+  if (!owner) {
+    return { ok: false as const, error: 'Owner access required.', bookings: [], customers: [], invoices: [], payments: [], bookingItems: [], menuItems: [] }
+  }
+
+  const admin = createAdminClient()
+  const operatorId = Number(owner.id)
+  const [{ data: bookings, error: bookingError }, { data: invoices, error: invoiceError }, { data: payments, error: paymentError }, { data: bookingItems, error: bookingItemError }, { data: menuItems, error: menuItemError }] = await Promise.all([
+    admin.from('BOOKING').select('BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status').eq('OperatorID', operatorId).order('EventDate', { ascending: false }),
+    admin.from('INVOICE').select('InvoiceID, BookingID, TotalAmount, DateGenerated'),
+    admin.from('PAYMENT').select('PaymentID, InvoiceID, Amount, PaymentType, Status, DatePaid').order('DatePaid', { ascending: false }),
+    admin.from('BOOKING_ITEM').select('BookingItemID, BookingID, MenuItemID, Quantity'),
+    admin.from('MENU_ITEM').select('MenuItemID, ItemName, Price'),
+  ])
+
+  const firstError = bookingError ?? invoiceError ?? paymentError ?? bookingItemError ?? menuItemError
+  if (firstError) return { ok: false as const, error: 'Could not load payment records.', bookings: [], customers: [], invoices: [], payments: [], bookingItems: [], menuItems: [] }
+
+  const customerIds = Array.from(new Set((bookings ?? []).map((booking) => booking.CustomerID)))
+  const { data: customers, error: customerError } = customerIds.length
+    ? await admin.from('CUSTOMER').select('CustomerID, Name, Email').in('CustomerID', customerIds)
+    : { data: [], error: null }
+
+  if (customerError) return { ok: false as const, error: 'Could not load customer records.', bookings: [], customers: [], invoices: [], payments: [], bookingItems: [], menuItems: [] }
+
+  return { ok: true as const, bookings: bookings ?? [], customers: customers ?? [], invoices: invoices ?? [], payments: payments ?? [], bookingItems: bookingItems ?? [], menuItems: menuItems ?? [] }
+}
+
+export async function recordOwnerPayment(input: { invoiceId: number; amount: number; type: string }) {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.' }
+  if (!Number.isFinite(input.invoiceId) || !Number.isFinite(input.amount) || input.amount <= 0) return { ok: false as const, error: 'Enter a valid payment.' }
+
+  const admin = createAdminClient()
+  const { data: invoice, error: invoiceError } = await admin.from('INVOICE').select('InvoiceID, BookingID, TotalAmount').eq('InvoiceID', input.invoiceId).maybeSingle()
+  if (invoiceError || !invoice) return { ok: false as const, error: 'Invoice not found.' }
+
+  const { data: booking, error: bookingError } = await admin.from('BOOKING').select('BookingID, OperatorID, Status').eq('BookingID', invoice.BookingID).maybeSingle()
+  if (bookingError || !booking || booking.OperatorID !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to record this payment.' }
+  if (booking.Status !== 'confirmed') return { ok: false as const, error: 'Payments can only be recorded against confirmed bookings.' }
+
+  const { data: existingPayments, error: paymentsError } = await admin.from('PAYMENT').select('Amount').eq('InvoiceID', input.invoiceId)
+  if (paymentsError) return { ok: false as const, error: 'Could not validate the outstanding balance.' }
+  const paid = (existingPayments ?? []).reduce((sum, payment) => sum + Number(payment.Amount), 0)
+  if (input.amount > Math.max(Number(invoice.TotalAmount) - paid, 0)) return { ok: false as const, error: 'Payment cannot be greater than the outstanding balance.' }
+
+  const { error } = await admin.from('PAYMENT').insert({ InvoiceID: input.invoiceId, Amount: input.amount, PaymentType: input.type, Status: 'paid', DatePaid: new Date().toISOString() })
+  if (error) return { ok: false as const, error: 'Could not record payment.' }
+  return { ok: true as const }
+}
+
 export async function updateBookingStatus(bookingId: number, newStatus: 'confirmed' | 'rejected') {
   const owner = await requireRole('owner')
   if (!owner) return { ok: false as const, error: 'Owner access required.' }
@@ -396,9 +448,83 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
   if (fetchError) return { ok: false as const, error: fetchError.message }
   if (!booking || booking.OperatorID !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this booking.' }
 
+  if (newStatus === 'confirmed') {
+    const { data: existingInvoice, error: invoiceLookupError } = await admin
+      .from('INVOICE')
+      .select('InvoiceID')
+      .eq('BookingID', bookingId)
+      .maybeSingle()
+    if (invoiceLookupError) return { ok: false as const, error: invoiceLookupError.message }
+
+    if (!existingInvoice) {
+      const { data: bookingItems, error: bookingItemsError } = await admin
+        .from('BOOKING_ITEM')
+        .select('MenuItemID, Quantity')
+        .eq('BookingID', bookingId)
+      if (bookingItemsError) return { ok: false as const, error: bookingItemsError.message }
+
+      const menuItemIds = Array.from(new Set((bookingItems ?? []).map((item) => Number(item.MenuItemID)).filter(Number.isFinite)))
+      const { data: menuItems, error: menuItemsError } = menuItemIds.length > 0
+        ? await admin.from('MENU_ITEM').select('MenuItemID, Price').in('MenuItemID', menuItemIds)
+        : { data: [], error: null }
+      if (menuItemsError) return { ok: false as const, error: menuItemsError.message }
+
+      const pricesByMenuItemId = new Map((menuItems ?? []).map((item) => [Number(item.MenuItemID), Number(item.Price ?? 0)]))
+      const totalAmount = (bookingItems ?? []).reduce(
+        (sum, item) => sum + (pricesByMenuItemId.get(Number(item.MenuItemID)) ?? 0) * Number(item.Quantity ?? 0),
+        0,
+      )
+
+      const { error: invoiceInsertError } = await admin.from('INVOICE').insert({
+        BookingID: bookingId,
+        TotalAmount: totalAmount,
+        DateGenerated: new Date().toISOString(),
+      })
+      if (invoiceInsertError) return { ok: false as const, error: invoiceInsertError.message }
+    }
+  }
+
   const { error } = await admin.from('BOOKING').update({ Status: newStatus }).eq('BookingID', bookingId)
   if (error) return { ok: false as const, error: error.message }
   return { ok: true as const }
+}
+
+async function updateCustomerMealPrepStatus(mealPrepOrderId: number, expectedStatuses: string[], nextStatus: 'active' | 'paused' | 'cancelled') {
+  const customer = await requireRole('customer')
+  if (!customer) return { ok: false as const, error: 'Customer access required.' }
+
+  const admin = createAdminClient()
+  const { data: mealPrepOrder, error: fetchError } = await admin
+    .from('MEAL_PREP_ORDER')
+    .select('MealPrepOrderID, CustomerID, Status')
+    .eq('MealPrepOrderID', mealPrepOrderId)
+    .maybeSingle()
+  if (fetchError) return { ok: false as const, error: fetchError.message }
+  if (!mealPrepOrder || mealPrepOrder.CustomerID !== Number(customer.id)) {
+    return { ok: false as const, error: 'You are not authorized to update this meal-prep order.' }
+  }
+  if (!expectedStatuses.includes(String(mealPrepOrder.Status))) {
+    return { ok: false as const, error: `This meal-prep order cannot be ${nextStatus}.` }
+  }
+
+  const { error } = await admin
+    .from('MEAL_PREP_ORDER')
+    .update({ Status: nextStatus })
+    .eq('MealPrepOrderID', mealPrepOrderId)
+  if (error) return { ok: false as const, error: error.message }
+  return { ok: true as const }
+}
+
+export async function pauseMealPrepOrder(mealPrepOrderId: number) {
+  return updateCustomerMealPrepStatus(mealPrepOrderId, ['active'], 'paused')
+}
+
+export async function resumeMealPrepOrder(mealPrepOrderId: number) {
+  return updateCustomerMealPrepStatus(mealPrepOrderId, ['paused'], 'active')
+}
+
+export async function cancelMealPrepOrder(mealPrepOrderId: number) {
+  return updateCustomerMealPrepStatus(mealPrepOrderId, ['active', 'paused'], 'cancelled')
 }
 
 export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStatus: 'active' | 'rejected') {
