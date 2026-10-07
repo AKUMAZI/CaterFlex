@@ -69,12 +69,16 @@ type CateringPrepItem = {
 
 type MealPrepDisplayItem = {
   id: string;
-  itemName: string;
   customerName: string;
   recurrencePattern: string;
   mealsPerCycle: number;
   nextFulfillmentDate: string | null;
-  quantity: number;
+  status: string | null;
+  lineItems: Array<{
+    itemName: string;
+    quantity: number;
+    prepTimeDays: number | null;
+  }>;
 };
 
 export default function PrepSchedulePage() {
@@ -206,62 +210,56 @@ export default function PrepSchedulePage() {
         // ========================================================
 
         const mealPrepDisplayItems: MealPrepDisplayItem[] =
-          [];
-
-        mealPrepOrders.forEach((order) => {
-          const customer =
-            customers.find(
-              (item) =>
-                item.CustomerID ===
-                order.CustomerID
-            );
-
-          const itemsForOrder =
-            mealPrepItems.filter(
-              (item) =>
-                item.MealPrepOrderID ===
-                order.MealPrepOrderID
-            );
-
-          itemsForOrder.forEach((mealPrepItem) => {
-            const menuItem =
-              menuItems.find(
+          mealPrepOrders.map((order) => {
+            const customer =
+              customers.find(
                 (item) =>
-                  item.MenuItemID ===
-                  mealPrepItem.MenuItemID
+                  item.CustomerID ===
+                  order.CustomerID
               );
 
-            if (!menuItem) {
-              return;
-            }
+            const itemsForOrder =
+              mealPrepItems.filter(
+                (item) =>
+                  item.MealPrepOrderID ===
+                  order.MealPrepOrderID
+              );
 
-            mealPrepDisplayItems.push({
-              id: `meal-prep-${order.MealPrepOrderID}-${mealPrepItem.MealPrepItemID}`,
+            const lineItems = itemsForOrder.flatMap(
+              (mealPrepItem) => {
+                const menuItem = menuItems.find(
+                  (item) =>
+                    item.MenuItemID ===
+                    mealPrepItem.MenuItemID
+                );
 
-              itemName:
-                menuItem.ItemName,
+                return menuItem
+                  ? [{
+                      itemName: menuItem.ItemName,
+                      quantity: mealPrepItem.Quantity,
+                      prepTimeDays: menuItem.PrepTimeDays,
+                    }]
+                  : [];
+              }
+            );
 
+            return {
+              id: `meal-prep-${order.MealPrepOrderID}`,
               customerName:
                 customer?.Name ??
                 'Unknown customer',
-
               recurrencePattern:
                 order.RecurrencePattern ??
                 'Recurring',
-
-              mealsPerCycle:
-                Number(
-                  order.MealsPerCycle ?? 0
-                ),
-
+              mealsPerCycle: Number(
+                order.MealsPerCycle ?? 0
+              ),
               nextFulfillmentDate:
                 order.NextFulfillmentDate,
-
-              quantity:
-                mealPrepItem.Quantity,
-            });
-          });
-        });
+              status: order.Status,
+              lineItems,
+            };
+          }).filter((order) => order.lineItems.length > 0);
 
         // ========================================================
         // 11. SAVE TO PAGE
@@ -578,67 +576,61 @@ export default function PrepSchedulePage() {
                       key={item.id}
                       className="p-4 rounded-lg border-2 border-border bg-muted/50"
                     >
-
                       <div className="flex items-start justify-between gap-4">
-
                         <div>
-
                           <p className="font-semibold text-card-foreground">
-                            {item.itemName}
-
-                            {item.quantity >
-                              1 &&
-                              ` × ${item.quantity}`}
+                            Meal prep order
                           </p>
 
                           <p className="text-sm text-muted-foreground mt-1">
-                            For{' '}
-                            {
-                              item.customerName
-                            }{' '}
-                            · Meal prep
+                            For {item.customerName} · Meal prep
                           </p>
 
+                          <ul className="mt-3 flex flex-col gap-2">
+                            {item.lineItems.map((lineItem) => {
+                              const fulfillmentDate = item.nextFulfillmentDate
+                                ? new Date(`${item.nextFulfillmentDate}T00:00:00`)
+                                : null;
+                              const prepStartDate = fulfillmentDate
+                                ? new Date(fulfillmentDate)
+                                : null;
+
+                              if (prepStartDate) {
+                                prepStartDate.setDate(
+                                  prepStartDate.getDate() - Number(lineItem.prepTimeDays ?? 0)
+                                );
+                              }
+
+                              return (
+                                <li key={`${item.id}-${lineItem.itemName}`} className="text-sm text-card-foreground">
+                                  <span className="font-medium">
+                                    {lineItem.itemName}{lineItem.quantity > 1 ? ` × ${lineItem.quantity}` : ''}
+                                  </span>
+                                  <span className="block text-xs text-muted-foreground mt-1">
+                                    Fulfillment: {fulfillmentDate ? fulfillmentDate.toLocaleDateString() : 'Not scheduled'} · Start prep: {prepStartDate ? prepStartDate.toLocaleDateString() : 'Not scheduled'}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
                         </div>
 
                         <div className="text-right">
-
                           <p className="text-sm font-medium text-card-foreground capitalize">
-                            {
-                              item.recurrencePattern
-                            }
+                            {item.recurrencePattern}
                           </p>
 
                           <p className="text-sm text-muted-foreground mt-1">
-                            {
-                              item.mealsPerCycle
-                            }{' '}
-                            {item.mealsPerCycle ===
-                            1
-                              ? 'meal'
-                              : 'meals'}{' '}
-                            per cycle
+                            {item.mealsPerCycle} {item.mealsPerCycle === 1 ? 'meal' : 'meals'} per cycle
                           </p>
-
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Next fulfillment:{' '}
-                            {item.nextFulfillmentDate
-                              ? new Date(`${item.nextFulfillmentDate}T00:00:00`).toLocaleDateString()
-                              : 'Not scheduled'}
-                          </p>
-
                         </div>
-
                       </div>
 
                       <div className="mt-3 pt-3 border-t border-border">
-
-                        <p className="text-xs font-medium text-muted-foreground">
-                          Status: Confirmed
+                        <p className="text-xs font-medium text-muted-foreground capitalize">
+                          Status: {item.status ?? 'Unknown'}
                         </p>
-
                       </div>
-
                     </div>
                   ))}
 
