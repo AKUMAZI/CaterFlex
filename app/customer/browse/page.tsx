@@ -348,6 +348,7 @@ export default function BrowsePage() {
       const result = isMealPrepOrder
         ? await createMealPrepOrder({
             mealPrepFrequency: customerBookingDraft.mealPrepFrequency,
+            eventDate,
             guestCount,
           }, selectedItems)
         : await createBooking({
