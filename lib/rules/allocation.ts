@@ -77,6 +77,11 @@ export function addDays(dateStr: string, days: number): string {
   return date.toISOString().slice(0, 10)
 }
 
+export function orderPrepWindow(fulfillmentDate: string, prepDaysPerItem: number[]): { prepStartDate: string; fulfillmentDate: string } {
+  const maxPrepDays = Math.max(0, ...prepDaysPerItem)
+  return { prepStartDate: addDays(fulfillmentDate, -maxPrepDays), fulfillmentDate: fulfillmentDate.slice(0, 10) }
+}
+
 export function computeAllocationShortfalls(
   requirements: AllocationRequirement[],
   quantity: number,
@@ -116,15 +121,14 @@ export function buildCommitment(
   recipes: Map<number, { ingredientId: number; qtyPerServing: number }[]>,
   prepDays: Map<number, number>,
 ): AllocationCommitment {
-  const maxPrepDays = Math.max(0, ...items.map((item) => prepDays.get(item.menuItemId) ?? 0))
-  const prepStartDate = addDays(fulfillmentDate, -maxPrepDays)
+  const window = orderPrepWindow(fulfillmentDate, items.map((item) => prepDays.get(item.menuItemId) ?? 0))
   const ingredientQuantities: Record<number, number> = {}
   for (const item of items) {
     for (const recipe of recipes.get(item.menuItemId) ?? []) {
       ingredientQuantities[recipe.ingredientId] = (ingredientQuantities[recipe.ingredientId] ?? 0) + item.servings * recipe.qtyPerServing
     }
   }
-  return { ref, prepStartDate, fulfillmentDate: fulfillmentDate.slice(0, 10), ingredientQuantities }
+  return { ref, prepStartDate: window.prepStartDate, fulfillmentDate: window.fulfillmentDate, ingredientQuantities }
 }
 
 /** FR-8.3; thesis sections 3.2.3 and 3.2.4: model recurring meal-prep fulfillment windows. */

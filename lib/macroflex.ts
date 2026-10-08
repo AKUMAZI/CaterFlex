@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { buildCommitment, computeAllocationShortfalls, expandRecurringDates, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, expandRecurringDates, orderPrepWindow, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
 
 export interface IngredientShortfall { ingredientName: string; required: number; available: number; shortBy: number; unitOfMeasure: string; allocated?: number }
 export interface SufficiencyCheckResult { sufficient: boolean; hasNoIngredients: boolean; shortfalls: IngredientShortfall[] }
@@ -34,11 +34,11 @@ export async function checkSufficiency(menuItemId: number, quantity = 1): Promis
   return { sufficient: shortfalls.length === 0, hasNoIngredients: false, shortfalls }
 }
 
-export async function checkSufficiencyWithAllocations(menuItemId: number, quantity: number, prepStartDate: string, fulfillmentDate: string, excludeRef?: CommitmentRef, client = supabase): Promise<SufficiencyCheckResult> {
-  const { data, error } = await getMenuIngredients(menuItemId, client)
-  if (error) throw error
-  const rows = (data ?? []) as unknown as IngredientRow[]
-  if (!rows.length) return { sufficient: true, hasNoIngredients: true, shortfalls: [] }
+async function loadCommitments(
+  client: typeof supabase,
+  recipes: Map<number, { ingredientId: number; qtyPerServing: number }[]>,
+  prepDays: Map<number, number>,
+): Promise<AllocationCommitment[]> {
   const bookingsQuery = client.from('BOOKING').select('BookingID, EventDate, GuestCount, BOOKING_ITEM(MenuItemID, Quantity)').eq('Status', 'confirmed')
   const mealPrepQuery = client.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, MEAL_PREP_ITEM(MenuItemID, Quantity)').eq('Status', 'active').not('NextFulfillmentDate', 'is', null)
   const [{ data: bookingData, error: bookingError }, { data: mealPrepData, error: mealPrepError }] = await Promise.all([bookingsQuery, mealPrepQuery])
@@ -46,12 +46,22 @@ export async function checkSufficiencyWithAllocations(menuItemId: number, quanti
   if (mealPrepError) throw mealPrepError
   const bookings = (bookingData ?? []) as unknown as BookingRow[]
   const mealPrepOrders = (mealPrepData ?? []) as unknown as MealPrepRow[]
-  const allItems = [...bookings.flatMap((b) => b.BOOKING_ITEM ?? []), ...mealPrepOrders.flatMap((o) => o.MEAL_PREP_ITEM ?? []), { MenuItemID: menuItemId, Quantity: quantity }]
-  const menuIds = [...new Set(allItems.map((item) => Number(item.MenuItemID)))]
-  const { data: menuData, error: menuError } = await client.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuIds)
+  const commitments: AllocationCommitment[] = []
+  for (const booking of bookings) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, String(booking.EventDate), (booking.BOOKING_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('booking', booking.GuestCount) })), recipes, prepDays))
+  for (const order of mealPrepOrders) for (const date of expandRecurringDates(String(order.NextFulfillmentDate), order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('meal_prep', undefined, order.MealsPerCycle) })), recipes, prepDays))
+  return commitments
+}
+
+export async function checkSufficiencyWithAllocations(menuItemId: number, quantity: number, prepStartDate: string, fulfillmentDate: string, excludeRef?: CommitmentRef, client = supabase): Promise<SufficiencyCheckResult> {
+  const { data, error } = await getMenuIngredients(menuItemId, client)
+  if (error) throw error
+  const rows = (data ?? []) as unknown as IngredientRow[]
+  if (!rows.length) return { sufficient: true, hasNoIngredients: true, shortfalls: [] }
+  const allItems = rows.length ? [{ MenuItemID: menuItemId, Quantity: quantity }] : []
+  const { data: menuData, error: menuError } = await client.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', [menuItemId])
   if (menuError) throw menuError
   const prepDays = new Map<number, number>(((menuData ?? []) as unknown as MenuRow[]).map((m) => [Number(m.MenuItemID), Number(m.PrepTimeDays ?? 0)]))
-  const { data: recipeData, error: recipeError } = await client.from('DISH_INGREDIENT').select('MenuItemID, IngredientID, QuantityRequiredPerServing').in('MenuItemID', menuIds)
+  const { data: recipeData, error: recipeError } = await client.from('DISH_INGREDIENT').select('MenuItemID, IngredientID, QuantityRequiredPerServing').in('MenuItemID', [menuItemId])
   if (recipeError) throw recipeError
   const recipes = new Map<number, { ingredientId: number; qtyPerServing: number }[]>()
   for (const row of (recipeData ?? []) as unknown as Array<{ MenuItemID: number; IngredientID: number; QuantityRequiredPerServing: number }>) {
@@ -59,17 +69,43 @@ export async function checkSufficiencyWithAllocations(menuItemId: number, quanti
     list.push({ ingredientId: Number(row.IngredientID), qtyPerServing: Number(row.QuantityRequiredPerServing ?? 0) })
     recipes.set(Number(row.MenuItemID), list)
   }
-  const commitments: AllocationCommitment[] = []
-  for (const booking of bookings) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, String(booking.EventDate), (booking.BOOKING_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('booking', booking.GuestCount) })), recipes, prepDays))
-  for (const order of mealPrepOrders) for (const date of expandRecurringDates(String(order.NextFulfillmentDate), order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('meal_prep', undefined, order.MealsPerCycle) })), recipes, prepDays))
+  const commitments = await loadCommitments(client, recipes, prepDays)
   const requirements = rows.flatMap((row) => {
     const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
-    return ingredient
-      ? [{ ingredientId: Number(ingredient.IngredientID ?? row.IngredientID), name: ingredient.IngredientName, unit: ingredient.UnitOfMeasure, requiredPerServing: Number(row.QuantityRequiredPerServing ?? 0), currentStock: Number(ingredient.CurrentStock ?? 0) }]
-      : []
+    return ingredient ? [{ ingredientId: Number(ingredient.IngredientID ?? row.IngredientID), name: ingredient.IngredientName, unit: ingredient.UnitOfMeasure, requiredPerServing: Number(row.QuantityRequiredPerServing ?? 0), currentStock: Number(ingredient.CurrentStock ?? 0) }] : []
   })
   const allocationResult = computeAllocationShortfalls(requirements, quantity, { prepStartDate, fulfillmentDate }, commitments, excludeRef)
   return { sufficient: allocationResult.sufficient, hasNoIngredients: false, shortfalls: allocationResult.shortfalls }
+}
+
+export interface OrderSufficiencyShortfall extends IngredientShortfall { contributingItems: Array<{ menuItemId: number; itemName: string }> }
+export interface OrderSufficiencyResult { sufficient: boolean; hasNoIngredients: boolean; shortfalls: OrderSufficiencyShortfall[] }
+
+export async function checkOrderSufficiencyWithAllocations(items: { menuItemId: number }[], servings: number, fulfillmentDate: string, excludeRef?: CommitmentRef, client = supabase): Promise<OrderSufficiencyResult> {
+  const menuIds = [...new Set(items.map((item) => Number(item.menuItemId)))]
+  const [{ data: menuData, error: menuError }, { data: recipeData, error: recipeError }] = await Promise.all([
+    client.from('MENU_ITEM').select('MenuItemID, ItemName, PrepTimeDays').in('MenuItemID', menuIds),
+    client.from('DISH_INGREDIENT').select('MenuItemID, IngredientID, QuantityRequiredPerServing, INGREDIENT:INGREDIENT(IngredientID, IngredientName, UnitOfMeasure, CurrentStock)').in('MenuItemID', menuIds),
+  ])
+  if (menuError) throw menuError
+  if (recipeError) throw recipeError
+  const menus = (menuData ?? []) as unknown as Array<MenuRow & { ItemName: string }>
+  const prepDays = new Map(menus.map((menu) => [Number(menu.MenuItemID), Number(menu.PrepTimeDays ?? 0)]))
+  const recipes = new Map<number, { ingredientId: number; qtyPerServing: number }[]>()
+  const stockById = new Map<number, { name: string; unit: string; currentStock: number }>()
+  for (const row of (recipeData ?? []) as unknown as IngredientRow[]) {
+    const list = recipes.get(Number((row as IngredientRow & { MenuItemID: number }).MenuItemID)) ?? []
+    const menuItemId = Number((row as IngredientRow & { MenuItemID: number }).MenuItemID)
+    list.push({ ingredientId: Number(row.IngredientID), qtyPerServing: Number(row.QuantityRequiredPerServing ?? 0) })
+    recipes.set(menuItemId, list)
+    const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
+    if (ingredient) stockById.set(Number(ingredient.IngredientID), { name: ingredient.IngredientName, unit: ingredient.UnitOfMeasure, currentStock: Number(ingredient.CurrentStock ?? 0) })
+  }
+  const commitments = await loadCommitments(client, recipes, prepDays)
+  const window = orderPrepWindow(fulfillmentDate, items.map((item) => prepDays.get(Number(item.menuItemId)) ?? 0))
+  const result = computeOrderShortfalls(items.map((item) => ({ menuItemId: Number(item.menuItemId), servings })), recipes, stockById, window, commitments, excludeRef)
+  const itemNames = new Map(menus.map((menu) => [Number(menu.MenuItemID), menu.ItemName]))
+  return { sufficient: result.sufficient, hasNoIngredients: items.every((item) => !(recipes.get(Number(item.menuItemId))?.length)), shortfalls: result.shortfalls.map((shortfall) => ({ ...shortfall, contributingItems: shortfall.contributingItems.map((menuItemId) => ({ menuItemId, itemName: itemNames.get(menuItemId) ?? '' })) })) }
 }
 
 export async function checkOverPurchase(operatorId?: number): Promise<{ overPurchased: OverPurchasedIngredient[] }> {

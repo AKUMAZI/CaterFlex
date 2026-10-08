@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, computeOrderShortfalls, expandRecurringDates, servingsForOrder } from './allocation'
+import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, computeOrderShortfalls, expandRecurringDates, orderPrepWindow, servingsForOrder } from './allocation'
 
 describe('allocation rules', () => {
   const recipes = new Map([[1, [{ ingredientId: 7, qtyPerServing: 2 }]], [2, [{ ingredientId: 7, qtyPerServing: 3 }]]])
@@ -45,6 +45,11 @@ describe('allocation rules', () => {
     const fulfillmentBefore = { ...fulfillmentBoundary, ref: { type: 'booking' as const, id: 13 }, fulfillmentDate: '2026-10-09' }
     expect(calculateAllocatedQuantity(7, { prepStartDate: '2026-10-01', fulfillmentDate: '2026-10-12' }, [prepBoundary, prepAfter])).toBe(4)
     expect(calculateAllocatedQuantity(7, { prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-20' }, [fulfillmentBoundary, fulfillmentBefore])).toBe(6)
+  })
+  it('builds an order prep window from the maximum prep time', () => {
+    expect(orderPrepWindow('2026-10-10', [1, 5, 2])).toEqual({ prepStartDate: '2026-10-05', fulfillmentDate: '2026-10-10' })
+    expect(orderPrepWindow('2026-10-10', [])).toEqual({ prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-10' })
+    expect(orderPrepWindow('2026-03-01', [2])).toEqual({ prepStartDate: '2026-02-27', fulfillmentDate: '2026-03-01' })
   })
   it('handles date arithmetic across month, year, and leap-year boundaries', () => {
     expect(addDays('2026-12-31', 1)).toBe('2027-01-01')
