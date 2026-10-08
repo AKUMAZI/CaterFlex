@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 
 import {
   createMenuItem,
@@ -1134,7 +1134,7 @@ export function MenuItemForm({
                       key={
                         tag.AllergyTagID
                       }
-                      className="flex items-center gap-2 text-sm text-card-foreground cursor-pointer"
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-card-foreground transition-colors hover:bg-muted/50"
                     >
                       <input
                         type="checkbox"
@@ -1146,8 +1146,15 @@ export function MenuItemForm({
                             allergen
                           )
                         }
-                        className="rounded border-border"
+                        className="peer sr-only"
                       />
+
+                      <span
+                        aria-hidden="true"
+                        className="flex size-4 items-center justify-center rounded border border-input text-transparent transition-colors peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground"
+                      >
+                        <Check />
+                      </span>
 
                       <span className="capitalize">
                         {tag.AllergenName.replace(
