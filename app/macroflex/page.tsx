@@ -124,7 +124,7 @@ export default function MacroFlexPage() {
         if (menuData) {
           for (const item of menuData) {
             const sufficiencyRes = await fetch(
-              `/api/macroflex/check/${item.MenuItemID}`
+              `/api/macroflex/check?menuItemId=${item.MenuItemID}`
             )
 
             if (!sufficiencyRes.ok) {
