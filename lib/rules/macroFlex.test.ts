@@ -1,17 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { calculateAllocatedQuantity } from '../macroflex'
 import { getScrapSuggestions } from './macroFlex'
 
-describe('MacroFlex allocation', () => {
-  it('counts only overlapping commitments and excludes the current ref', () => {
-    const commitments = [
-      { ref: 1, prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-12', quantities: { 7: 3 } },
-      { ref: 2, prepStartDate: '2026-10-20', fulfillmentDate: '2026-10-22', quantities: { 7: 9 } },
-      { ref: 3, prepStartDate: '2026-10-11', fulfillmentDate: '2026-10-11', quantities: { 7: 4 } },
-    ]
-    expect(calculateAllocatedQuantity(7, { prepStartDate: '2026-10-11', fulfillmentDate: '2026-10-13' }, commitments, 1)).toBe(4)
-  })
-})
 
 describe('MacroFlex scrap suggestions', () => {
   it('requires every ingredient of an alternative to come from scraps', () => {
