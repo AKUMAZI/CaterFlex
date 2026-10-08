@@ -5,8 +5,13 @@ import { useAppState } from '@/lib/state';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getUpcomingFulfillmentDates } from '@/lib/rules/mealPrep';
-import { getCustomerMealPrepOrders } from '@/app/actions/booking-actions';
-import { Calendar, MapPin, Users, Clock, Pause, Play, Edit2 } from 'lucide-react';
+import {
+  cancelMealPrepOrder,
+  getCustomerMealPrepOrders,
+  pauseMealPrepOrder,
+  resumeMealPrepOrder,
+} from '@/app/actions/booking-actions';
+import { Calendar, MapPin, Users, Clock, Pause, Play, Edit2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -36,12 +41,12 @@ export default function ActiveOrdersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ servings: '', time: '', frequency: 'weekly', method: 'pickup', address: '', notes: '', dishIds: [] as string[] });
 
-  useEffect(() => {
-    getCustomerMealPrepOrders().then((result) => {
-      if (!result.ok) return;
-      setMealPrepOrders(result.orders
-        .filter((order) => order.Status === 'pending' || order.Status === 'active' || order.Status === 'confirmed')
-        .map((order) => ({
+  const refreshMealPrepOrders = async () => {
+    const result = await getCustomerMealPrepOrders();
+    if (!result.ok) return;
+    setMealPrepOrders(result.orders
+      .filter((order) => order.Status === 'pending' || order.Status === 'active' || order.Status === 'confirmed' || order.Status === 'paused')
+      .map((order) => ({
           id: `meal-prep-${order.MealPrepOrderID}`,
           customerId: String(order.CustomerID),
           customerName: currentUser?.name ?? 'Customer',
@@ -61,8 +66,11 @@ export default function ActiveOrdersPage() {
           selectedMenuItemIds: (result.items ?? [])
             .filter((item) => item.MealPrepOrderID === order.MealPrepOrderID)
             .map((item) => String(item.MenuItemID)),
-        })));
-    });
+      })));
+  };
+
+  useEffect(() => {
+    void refreshMealPrepOrders();
   }, [currentUser?.email, currentUser?.name]);
 
   // Keep the tab scoped to the signed-in customer before applying meal-plan filters.
@@ -81,10 +89,30 @@ export default function ActiveOrdersPage() {
     ...mealPrepOrders,
   ];
 
-  const toggleOrderStatus = (bookingId: string, currentStatus: 'active' | 'paused') => {
-    updateBooking(bookingId, {
-      mealPrepStatus: currentStatus === 'active' ? 'paused' : 'active',
-    });
+  const toggleOrderStatus = async (bookingId: string, currentStatus: 'active' | 'paused') => {
+    const mealPrepOrderId = Number(bookingId.replace('meal-prep-', ''));
+    if (!Number.isInteger(mealPrepOrderId)) return;
+
+    const result = currentStatus === 'active'
+      ? await pauseMealPrepOrder(mealPrepOrderId)
+      : await resumeMealPrepOrder(mealPrepOrderId);
+    if (result.ok) {
+      await refreshMealPrepOrders();
+      router.refresh();
+    }
+  };
+
+  const handleCancelOrder = async (bookingId: string) => {
+    if (!window.confirm('Cancel this meal prep order? This action cannot be undone.')) return;
+    const mealPrepOrderId = Number(bookingId.replace('meal-prep-', ''));
+    if (!Number.isInteger(mealPrepOrderId)) return;
+
+    const result = await cancelMealPrepOrder(mealPrepOrderId);
+    if (result.ok) {
+      setExpandedId(null);
+      await refreshMealPrepOrders();
+      router.refresh();
+    }
   };
 
   const startEditing = (booking: (typeof activeMealPrepOrders)[number]) => {
@@ -298,10 +326,16 @@ export default function ActiveOrdersPage() {
                           <Button size="sm" className="flex-1" onClick={() => saveChanges(booking.id)}>Save changes</Button>
                         </>
                       ) : (
-                        <Button variant="outline" size="sm" className="flex-1 gap-2" onClick={() => startEditing(booking)}>
-                          <Edit2 className="w-4 h-4" />
-                          Modify
-                        </Button>
+                        <>
+                          <Button variant="outline" size="sm" className="flex-1 gap-2" onClick={() => startEditing(booking)}>
+                            <Edit2 className="w-4 h-4" />
+                            Modify
+                          </Button>
+                          <Button variant="destructive" size="sm" className="flex-1 gap-2" onClick={() => handleCancelOrder(booking.id)}>
+                            <X className="w-4 h-4" />
+                            Cancel Order
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
