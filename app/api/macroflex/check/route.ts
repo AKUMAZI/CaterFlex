@@ -1,4 +1,4 @@
-import { checkSufficiency } from '@/lib/macroflex'
+import { checkSufficiencyWithAllocations } from '@/lib/macroflex'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -14,9 +14,14 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const result = await checkSufficiency(
+    const fulfillmentDate = searchParams.get('fulfillmentDate') ?? new Date().toISOString().slice(0, 10)
+    const prepStartDate = searchParams.get('prepStartDate') ?? fulfillmentDate
+    const result = await checkSufficiencyWithAllocations(
       parseInt(menuItemId, 10),
-      quantity ? parseInt(quantity, 10) : 1
+      quantity ? parseInt(quantity, 10) : 1,
+      prepStartDate,
+      fulfillmentDate,
+      searchParams.get('excludeRef') ? parseInt(searchParams.get('excludeRef')!, 10) : undefined,
     )
 
     return NextResponse.json(result)

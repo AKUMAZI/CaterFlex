@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
-import { checkSufficiency } from '@/lib/macroflex'
+import { checkSufficiencyWithAllocations } from '@/lib/macroflex'
 import { createNotification, hasNotificationForToday } from '@/lib/notifications'
 
 export const dynamic = 'force-dynamic'
@@ -37,7 +37,9 @@ export async function GET(request: NextRequest) {
     for (const item of items ?? []) {
       const { data: menuItem } = await admin.from('MENU_ITEM').select('ItemName, PrepTimeDays').eq('MenuItemID', item.MenuItemID).maybeSingle()
       if (!menuItem || prepStartDate(String(booking.EventDate), Number(menuItem.PrepTimeDays ?? 0)) > today) continue
-      const result = await checkSufficiency(Number(item.MenuItemID), Number(item.Quantity ?? booking.GuestCount ?? 1))
+      const fulfillmentDate = String(booking.EventDate).slice(0, 10)
+      const prepStart = prepStartDate(fulfillmentDate, Number(menuItem.PrepTimeDays ?? 0)).toISOString().slice(0, 10)
+      const result = await checkSufficiencyWithAllocations(Number(item.MenuItemID), Number(item.Quantity ?? booking.GuestCount ?? 1), prepStart, fulfillmentDate, Number(booking.BookingID))
       checked += 1
       const type = result.sufficient ? 'prep_start_confirmed' : 'insufficient_ingredients'
       if (await hasNotificationForToday(Number(booking.OperatorID), type, { bookingId: Number(booking.BookingID) })) continue
@@ -64,7 +66,8 @@ export async function GET(request: NextRequest) {
       .eq('MealPrepOrderID', order.MealPrepOrderID)
 
     for (const item of items ?? []) {
-      const result = await checkSufficiency(Number(item.MenuItemID), Number(item.Quantity ?? order.MealsPerCycle ?? 1))
+      const fulfillmentDate = String(order.NextFulfillmentDate).slice(0, 10)
+      const result = await checkSufficiencyWithAllocations(Number(item.MenuItemID), Number(item.Quantity ?? order.MealsPerCycle ?? 1), fulfillmentDate, fulfillmentDate, Number(order.MealPrepOrderID))
       mealPrepChecked += 1
       const type = result.sufficient ? 'prep_start_confirmed' : 'insufficient_ingredients'
       const metadata = { mealPrepOrderId: Number(order.MealPrepOrderID) }

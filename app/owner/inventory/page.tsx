@@ -930,21 +930,9 @@ export default function InventoryPage() {
                   {scrapSuggestions.map(
                     (suggestion) => (
                       <li
-                        key={`${suggestion.dishId}-${suggestion.leftoverIngredientId}`}
+                        key={suggestion.dishId}
                       >
-                        Leftover{' '}
-                        {
-                          suggestion.leftoverIngredientName
-                        }{' '}
-                        (
-                        {
-                          suggestion.leftoverQty
-                        }
-                        {suggestion.unit}
-                        ) — can still make{' '}
-                        <strong>
-                          {suggestion.dishName}
-                        </strong>
+                        Can still make <strong>{suggestion.dishName}</strong> using leftover: {suggestion.usesLeftover.map((leftover) => `${leftover.ingredientName} (${leftover.quantity}${leftover.unit})`).join(', ')}
                       </li>
                     )
                   )}

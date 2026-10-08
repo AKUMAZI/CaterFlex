@@ -10,10 +10,11 @@ export interface DishStockCheck {
 export interface ScrapSuggestion {
   dishId: string;
   dishName: string;
-  leftoverIngredientId: string;
-  leftoverIngredientName: string;
-  leftoverQty: number;
-  unit: string;
+  usesLeftover: Array<{ ingredientId: string; ingredientName: string; quantity: number; unit: string }>;
+  leftoverIngredientId?: string;
+  leftoverIngredientName?: string;
+  leftoverQty?: number;
+  unit?: string;
 }
 
 export function getIngredientStock(
@@ -64,47 +65,28 @@ export function getOverPurchasedIngredients(ingredients: Ingredient[]): Ingredie
   return ingredients.filter(isOverPurchased);
 }
 
+/** FR-7.6: suggestions must be fully preparable from the failed dish's scraps alone. */
 export function getScrapSuggestions(
   ingredients: Ingredient[],
-  menuItems: MenuItem[]
+  menuItems: MenuItem[],
+  failedDish?: MenuItem
 ): ScrapSuggestion[] {
-  const suggestions: ScrapSuggestion[] = [];
-  const seen = new Set<string>();
-
-  for (const ingredient of ingredients) {
-    const leftover = ingredient.currentStock;
-    if (leftover <= 0) continue;
-
-    const blockedDishes = menuItems.filter((dish) => {
-      const req = dish.requiredIngredients.find((r) => r.id === ingredient.id);
-      return req && leftover < req.qty;
-    });
-
-    if (blockedDishes.length === 0) continue;
-
-    for (const dish of menuItems) {
-      const req = dish.requiredIngredients.find((r) => r.id === ingredient.id);
-      if (!req || leftover < req.qty) continue;
-
-      const check = checkDishStock(dish, ingredients);
-      if (check.status !== 'available') continue;
-
-      const key = `${dish.id}-${ingredient.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      suggestions.push({
-        dishId: dish.id,
-        dishName: dish.name,
-        leftoverIngredientId: ingredient.id,
-        leftoverIngredientName: ingredient.name,
-        leftoverQty: leftover,
-        unit: ingredient.unit,
-      });
-    }
-  }
-
-  return suggestions;
+  const failed = failedDish ?? menuItems.find((dish) => dish.requiredIngredients.some((req) => {
+    const stock = getIngredientStock(ingredients, req.id)?.currentStock ?? 0;
+    return stock > 0 && stock < req.qty;
+  }));
+  if (!failed) return [];
+  const leftovers = new Map(failed.requiredIngredients.flatMap((req) => {
+    const stock = getIngredientStock(ingredients, req.id);
+    return stock && stock.currentStock > 0 && stock.currentStock < req.qty
+      ? [[req.id, { name: stock.name, quantity: stock.currentStock, unit: stock.unit }] as const]
+      : [];
+  }));
+  return menuItems.filter((dish) => dish.id !== failed.id && dish.requiredIngredients.length > 0 && dish.requiredIngredients.every((req) => leftovers.has(req.id) && leftovers.get(req.id)!.quantity >= req.qty)).map((dish) => ({
+    dishId: dish.id,
+    dishName: dish.name,
+    usesLeftover: dish.requiredIngredients.map((req) => ({ ingredientId: req.id, ingredientName: leftovers.get(req.id)!.name, quantity: req.qty, unit: leftovers.get(req.id)!.unit })),
+  }));
 }
 
 export function getInsufficientDishes(

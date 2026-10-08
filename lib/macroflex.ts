@@ -1,23 +1,12 @@
 import { supabase } from './supabase'
 
-/**
- * MacroFlex: Core logic for menu sufficiency, over-purchase detection, and scrap-based suggestions.
- * 
- * KEY ASSUMPTIONS:
- * - NULL CurrentStock is treated as 0 (no stock recorded).
- * - NULL OperatorID in INGREDIENT rows represents shared/global ingredients.
- * - MENU_ITEM has no OperatorID; all items are globally accessible.
- * 
- * All table and column names are PascalCase and double-quoted in queries
- * since Postgres treats unquoted identifiers as lowercase.
- */
-
 export interface IngredientShortfall {
   ingredientName: string
   required: number
   available: number
   shortBy: number
   unitOfMeasure: string
+  allocated?: number
 }
 
 export interface SufficiencyCheckResult {
@@ -34,218 +23,123 @@ export interface OverPurchasedIngredient {
   unitOfMeasure: string
 }
 
-export interface OverPurchaseCheckResult {
-  overPurchased: OverPurchasedIngredient[]
-}
-
 export interface ScrapSuggestion {
   menuItemId: number
   itemName: string
   category: string
   price: number
+  usesLeftover: Array<{ ingredientName: string; quantity: number; unitOfMeasure: string }>
 }
 
-export interface ScrapSuggestionResult {
-  alternatives: ScrapSuggestion[]
+export interface ScrapSuggestionResult { alternatives: ScrapSuggestion[] }
+
+export interface AllocationCommitment {
+  ref: number
+  prepStartDate: string
+  fulfillmentDate: string
+  quantities: Record<number, number>
 }
 
-/**
- * Check if a menu item can be fully prepared given current ingredient stock.
- * 
- * For each ingredient in DISH_INGREDIENT linked to this menu item:
- * - Compare CurrentStock (treated as 0 if NULL) vs QuantityRequiredPerServing × quantity.
- * - Return sufficient=true if all ingredients meet requirements.
- * - Return sufficient=false with a detailed list of every shortfall.
- * 
- * @param menuItemId The MenuItemID to check.
- * @param quantity Number of servings to prepare (default 1).
- * @returns SufficiencyCheckResult with status and shortfalls.
- */
-export async function checkSufficiency(
+/** FR-8.3 / thesis sections 3.2.3–3.2.4: only overlapping commitments consume stock. */
+export function calculateAllocatedQuantity(
+  ingredientId: number,
+  window: { prepStartDate: string; fulfillmentDate: string },
+  commitments: AllocationCommitment[],
+  excludeRef?: number,
+): number {
+  return commitments
+    .filter((commitment) => commitment.ref !== excludeRef)
+    .filter((commitment) => commitment.prepStartDate <= window.fulfillmentDate && commitment.fulfillmentDate >= window.prepStartDate)
+    .reduce((total, commitment) => total + (commitment.quantities[ingredientId] ?? 0), 0)
+}
+
+async function getMenuIngredients(menuItemId: number) {
+  return supabase.from('DISH_INGREDIENT').select('IngredientID, QuantityRequiredPerServing, INGREDIENT:INGREDIENT(IngredientID, IngredientName, UnitOfMeasure, CurrentStock)').eq('MenuItemID', menuItemId)
+}
+
+export async function checkSufficiency(menuItemId: number, quantity = 1): Promise<SufficiencyCheckResult> {
+  const { data, error } = await getMenuIngredients(menuItemId)
+  if (error) throw error
+  if (!data?.length) return { sufficient: true, hasNoIngredients: true, shortfalls: [] }
+  const shortfalls: IngredientShortfall[] = []
+  for (const row of data) {
+    const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
+    if (!ingredient) continue
+    const required = Number(row.QuantityRequiredPerServing ?? 0) * quantity
+    const available = Number(ingredient.CurrentStock ?? 0)
+    if (available < required) shortfalls.push({ ingredientName: ingredient.IngredientName, required, available, shortBy: required - available, unitOfMeasure: ingredient.UnitOfMeasure })
+  }
+  return { sufficient: shortfalls.length === 0, hasNoIngredients: false, shortfalls }
+}
+
+export async function checkSufficiencyWithAllocations(
   menuItemId: number,
-  quantity: number = 1
+  quantity: number,
+  prepStartDate: string,
+  fulfillmentDate: string,
+  excludeRef?: number,
 ): Promise<SufficiencyCheckResult> {
-  try {
-    // Query DISH_INGREDIENT joined with INGREDIENT to get current stock and requirements.
-    const { data, error } = await supabase
-      .from('DISH_INGREDIENT')
-      .select(
-        `
-        "IngredientID",
-        "QuantityRequiredPerServing",
-        INGREDIENT:INGREDIENT(
-          "IngredientName",
-          "UnitOfMeasure",
-          "CurrentStock"
-        )
-        `
-      )
-      .eq('MenuItemID', menuItemId)
+  const { data, error } = await getMenuIngredients(menuItemId)
+  if (error) throw error
+  if (!data?.length) return { sufficient: true, hasNoIngredients: true, shortfalls: [] }
 
-    if (error) {
-      throw error
-    }
-
-    // If no ingredients linked, return explicitly so calling code knows this is a data issue.
-    if (!data || data.length === 0) {
-      return {
-        sufficient: true,
-        hasNoIngredients: true,
-        shortfalls: [],
-      }
-    }
-
-    const shortfalls: IngredientShortfall[] = []
-    let allSufficient = true
-
-    for (const row of data) {
-      const ingredient = Array.isArray(row.INGREDIENT)
-        ? row.INGREDIENT[0]
-        : row.INGREDIENT
-
-      if (!ingredient) {
-        continue
-      }
-
-      // Treat NULL CurrentStock as 0.
-      const available = ingredient.CurrentStock ?? 0
-      const required = (row.QuantityRequiredPerServing ?? 0) * quantity
-
-      if (available < required) {
-        allSufficient = false
-        shortfalls.push({
-          ingredientName: ingredient.IngredientName,
-          required,
-          available,
-          shortBy: required - available,
-          unitOfMeasure: ingredient.UnitOfMeasure,
-        })
-      }
-    }
-
-    return {
-      sufficient: allSufficient,
-      hasNoIngredients: false,
-      shortfalls,
-    }
-  } catch (error) {
-    console.error('[MacroFlex] Sufficiency check failed:', error)
-    throw error
+  const [{ data: bookings }, { data: mealPrepOrders }] = await Promise.all([
+    supabase.from('BOOKING').select('BookingID, EventDate, GuestCount, BOOKING_ITEM(MenuItemID, Quantity)').eq('Status', 'confirmed'),
+    supabase.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, MEAL_PREP_ITEM(MenuItemID, Quantity)').eq('Status', 'active').not('NextFulfillmentDate', 'is', null),
+  ])
+  const commitments: AllocationCommitment[] = []
+  const addCommitment = (ref: number, date: string, prepDays: number, items: any[], fallback: number) => {
+    const start = new Date(`${date}T00:00:00`)
+    start.setDate(start.getDate() - Math.max(0, prepDays))
+    const quantities: Record<number, number> = {}
+    for (const item of items ?? []) quantities[Number(item.MenuItemID)] = Number(item.Quantity ?? fallback)
+    commitments.push({ ref, prepStartDate: start.toISOString().slice(0, 10), fulfillmentDate: date, quantities })
   }
+  const menuIds = [...new Set([menuItemId, ...(bookings ?? []).flatMap((b: any) => (b.BOOKING_ITEM ?? []).map((i: any) => Number(i.MenuItemID))), ...(mealPrepOrders ?? []).flatMap((o: any) => (o.MEAL_PREP_ITEM ?? []).map((i: any) => Number(i.MenuItemID)))])]
+  const { data: menus } = await supabase.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuIds)
+  const prepDays = new Map((menus ?? []).map((m: any) => [Number(m.MenuItemID), Number(m.PrepTimeDays ?? 0)]))
+  for (const booking of bookings ?? []) addCommitment(Number(booking.BookingID), String(booking.EventDate).slice(0, 10), Math.max(...(booking.BOOKING_ITEM ?? []).map((i: any) => prepDays.get(Number(i.MenuItemID)) ?? 0), 0), booking.BOOKING_ITEM, Number(booking.GuestCount ?? 1))
+  for (const order of mealPrepOrders ?? []) addCommitment(Number(order.MealPrepOrderID), String(order.NextFulfillmentDate).slice(0, 10), Math.max(...(order.MEAL_PREP_ITEM ?? []).map((i: any) => prepDays.get(Number(i.MenuItemID)) ?? 0), 0), order.MEAL_PREP_ITEM, Number(order.MealsPerCycle ?? 1))
+
+  const shortfalls: IngredientShortfall[] = []
+  for (const row of data) {
+    const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
+    if (!ingredient) continue
+    const required = Number(row.QuantityRequiredPerServing ?? 0) * quantity
+    const allocated = calculateAllocatedQuantity(Number(ingredient.IngredientID ?? row.IngredientID), { prepStartDate, fulfillmentDate }, commitments, excludeRef)
+    const available = Math.max(0, Number(ingredient.CurrentStock ?? 0) - allocated)
+    if (available < required) shortfalls.push({ ingredientName: ingredient.IngredientName, required, available, shortBy: required - available, unitOfMeasure: ingredient.UnitOfMeasure, allocated })
+  }
+  return { sufficient: shortfalls.length === 0, hasNoIngredients: false, shortfalls }
 }
 
-/**
- * Check for over-purchased ingredients (CurrentStock > MaxStorageCapacity).
- * 
- * Treats NULL CurrentStock as 0 (which will never exceed capacity, correct behavior).
- * 
- * @param operatorId Optional: filter to a specific operator's ingredients.
- *                    If provided, includes only ingredients where OperatorID = operatorId.
- *                    If not provided, includes all ingredients.
- * @returns OverPurchaseCheckResult with list of over-purchased items.
- */
-export async function checkOverPurchase(
-  operatorId?: number
-): Promise<OverPurchaseCheckResult> {
-  try {
-    let query = supabase
-      .from('INGREDIENT')
-      .select(
-        `
-        "IngredientID",
-        "IngredientName",
-        "UnitOfMeasure",
-        "CurrentStock",
-        "MaxStorageCapacity"
-        `
-      )
-
-    // If operatorId provided, filter to that operator's ingredients (exclude NULL OperatorID).
-    if (operatorId !== undefined) {
-      query = query.eq('OperatorID', operatorId)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      throw error
-    }
-
-    const overPurchased: OverPurchasedIngredient[] = []
-
-    if (data) {
-      for (const ingredient of data) {
-        // Treat NULL CurrentStock as 0.
-        const currentStock = ingredient.CurrentStock ?? 0
-
-        if (currentStock > ingredient.MaxStorageCapacity) {
-          overPurchased.push({
-            ingredientName: ingredient.IngredientName,
-            currentStock,
-            maxCapacity: ingredient.MaxStorageCapacity,
-            exceededBy: currentStock - ingredient.MaxStorageCapacity,
-            unitOfMeasure: ingredient.UnitOfMeasure,
-          })
-        }
-      }
-    }
-
-    return {
-      overPurchased,
-    }
-  } catch (error) {
-    console.error('[MacroFlex] Over-purchase check failed:', error)
-    throw error
-  }
+export async function checkOverPurchase(operatorId?: number): Promise<{ overPurchased: OverPurchasedIngredient[] }> {
+  let query = supabase.from('INGREDIENT').select('IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity')
+  if (operatorId !== undefined) query = query.eq('OperatorID', operatorId)
+  const { data, error } = await query
+  if (error) throw error
+  return { overPurchased: (data ?? []).filter((i: any) => Number(i.CurrentStock ?? 0) > Number(i.MaxStorageCapacity)).map((i: any) => ({ ingredientName: i.IngredientName, currentStock: Number(i.CurrentStock ?? 0), maxCapacity: Number(i.MaxStorageCapacity), exceededBy: Number(i.CurrentStock ?? 0) - Number(i.MaxStorageCapacity), unitOfMeasure: i.UnitOfMeasure })) }
 }
 
-/**
- * Suggest alternative menu items that can be fully prepared with current ingredient stock.
- * 
- * When a menu item fails the sufficiency check, this function re-runs the sufficiency check
- * against every OTHER menu item using the same live stock levels. Returns items that can be
- * fully prepared right now.
- * 
- * @param failedMenuItemId The MenuItemID that failed sufficiency.
- * @returns ScrapSuggestionResult with list of executable alternatives.
- */
-export async function getScrapBasedSuggestions(
-  failedMenuItemId: number
-): Promise<ScrapSuggestionResult> {
-  try {
-    // Fetch all menu items except the failed one.
-    const { data: menuItems, error: menuError } = await supabase
-      .from('MENU_ITEM')
-      .select(`"MenuItemID", "ItemName", "Category", "Price"`)
-      .neq('MenuItemID', failedMenuItemId)
-
-    if (menuError) {
-      throw menuError
-    }
-
-    const alternatives: ScrapSuggestion[] = []
-
-    // For each alternative menu item, run sufficiency check.
-    if (menuItems) {
-      for (const item of menuItems) {
-        const check = await checkSufficiency(item.MenuItemID, 1)
-        // If sufficient, add to alternatives.
-        if (check.sufficient && !check.hasNoIngredients) {
-          alternatives.push({
-            menuItemId: item.MenuItemID,
-            itemName: item.ItemName,
-            category: item.Category,
-            price: item.Price,
-          })
-        }
-      }
-    }
-
-    return {
-      alternatives,
-    }
-  } catch (error) {
-    console.error('[MacroFlex] Scrap-based suggestions failed:', error)
-    throw error
+/** FR-7.6: scraps come only from ingredients that are positive but insufficient for the failed dish. */
+export async function getScrapBasedSuggestions(failedMenuItemId: number): Promise<ScrapSuggestionResult> {
+  const { data: failed, error: failedError } = await getMenuIngredients(failedMenuItemId)
+  if (failedError) throw failedError
+  const leftovers = new Map<number, { name: string; quantity: number; unit: string }>()
+  for (const row of failed ?? []) {
+    const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
+    const required = Number(row.QuantityRequiredPerServing ?? 0)
+    const stock = Number(ingredient?.CurrentStock ?? 0)
+    if (ingredient && stock > 0 && stock < required) leftovers.set(Number(ingredient.IngredientID ?? row.IngredientID), { name: ingredient.IngredientName, quantity: stock, unit: ingredient.UnitOfMeasure })
   }
+  if (!leftovers.size) return { alternatives: [] }
+  const { data: items, error } = await supabase.from('MENU_ITEM').select('MenuItemID, ItemName, Category, Price, DISH_INGREDIENT(IngredientID, QuantityRequiredPerServing, INGREDIENT:INGREDIENT(IngredientID, IngredientName, UnitOfMeasure))').neq('MenuItemID', failedMenuItemId)
+  if (error) throw error
+  const alternatives = (items ?? []).filter((item: any) => {
+    const requirements = item.DISH_INGREDIENT ?? []
+    return requirements.length > 0 && requirements.every((r: any) => leftovers.has(Number(r.IngredientID)) && leftovers.get(Number(r.IngredientID))!.quantity >= Number(r.QuantityRequiredPerServing ?? 0))
+  }).map((item: any) => ({ menuItemId: Number(item.MenuItemID), itemName: item.ItemName, category: item.Category, price: Number(item.Price), usesLeftover: (item.DISH_INGREDIENT ?? []).map((r: any) => ({ ingredientName: leftovers.get(Number(r.IngredientID))!.name, quantity: Number(r.QuantityRequiredPerServing ?? 0), unitOfMeasure: leftovers.get(Number(r.IngredientID))!.unit })) }))
+  return { alternatives }
 }
+
+export async function getScrapSuggestions(failedMenuItemId: number) { return getScrapBasedSuggestions(failedMenuItemId) }
