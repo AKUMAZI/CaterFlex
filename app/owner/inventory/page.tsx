@@ -204,7 +204,7 @@ export default function InventoryPage() {
   const [formCategory, setFormCategory] = useState<Exclude<IngredientCategory, 'all' | 'low'>>('produce');
   const [formAllergyTags, setFormAllergyTags] = useState<string[]>([]);
   const [formSaving, setFormSaving] = useState(false);
-  const allergyTagOptions = ['dairy', 'eggs', 'gluten', 'peanuts', 'shellfish', 'soy', 'tree nuts', 'other'];
+  const allergyTagOptions = ['dairy', 'eggs', 'gluten', 'peanuts', 'shellfish', 'soy'];
   const measurementOptions = ['units', 'grams', 'kilograms', 'milliliters', 'liters', 'teaspoons', 'tablespoons', 'cups', 'ounces', 'pounds'];
   const [dishFormOpen, setDishFormOpen] = useState(false);
   const [dishFormMode, setDishFormMode] = useState<'add' | 'edit'>('add');
