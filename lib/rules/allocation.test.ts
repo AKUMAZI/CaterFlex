@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, expandRecurringDates, servingsForOrder } from './allocation'
+import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, computeOrderShortfalls, expandRecurringDates, servingsForOrder } from './allocation'
 
 describe('allocation rules', () => {
   const recipes = new Map([[1, [{ ingredientId: 7, qtyPerServing: 2 }]], [2, [{ ingredientId: 7, qtyPerServing: 3 }]]])
@@ -61,4 +61,36 @@ describe('allocation rules', () => {
     expect(calculateAllocatedQuantity(7, window, commitments, { type: 'booking', id: 21 })).toBe(dates.length * 2)
   })
   it('expands weekly and biweekly dates within horizon', () => { expect(expandRecurringDates('2026-10-01', 'weekly')).toEqual(['2026-10-01', '2026-10-08', '2026-10-15', '2026-10-22', '2026-10-29']); expect(expandRecurringDates('2026-10-01', 'biweekly')).toEqual(['2026-10-01', '2026-10-15', '2026-10-29']) })
+  it('combines shared ingredient demand across dishes', () => {
+    const sharedRecipes = new Map([[1, [{ ingredientId: 7, qtyPerServing: 6 }]], [2, [{ ingredientId: 7, qtyPerServing: 6 }]]])
+    const stock = new Map([[7, { name: 'Rice', unit: 'kg', currentStock: 10 }]])
+    const window = { prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-10' }
+    expect(computeAllocationShortfalls([{ ingredientId: 7, name: 'Rice', unit: 'kg', requiredPerServing: 6, currentStock: 10 }], 1, window, []).sufficient).toBe(true)
+    expect(computeOrderShortfalls([{ menuItemId: 1, servings: 1 }, { menuItemId: 2, servings: 1 }], sharedRecipes, stock, window, [])).toEqual({ sufficient: false, shortfalls: [{ ingredientName: 'Rice', required: 12, available: 10, shortBy: 2, unitOfMeasure: 'kg', allocated: 0, contributingItems: [1, 2] }] })
+  })
+  it('keeps separate ingredients independent and reports each shortfall once', () => {
+    const recipesWithoutOverlap = new Map([[1, [{ ingredientId: 7, qtyPerServing: 6 }]], [2, [{ ingredientId: 8, qtyPerServing: 6 }]]])
+    const stock = new Map([[7, { name: 'Rice', unit: 'kg', currentStock: 10 }], [8, { name: 'Beans', unit: 'kg', currentStock: 10 }]])
+    const result = computeOrderShortfalls([{ menuItemId: 1, servings: 1 }, { menuItemId: 2, servings: 1 }], recipesWithoutOverlap, stock, { prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-10' }, [])
+    expect(result.sufficient).toBe(true)
+    expect(result.shortfalls).toHaveLength(0)
+  })
+  it('subtracts overlapping other bookings from combined demand', () => {
+    const stock = new Map([[7, { name: 'Rice', unit: 'kg', currentStock: 5 }]])
+    const other = buildCommitment({ type: 'booking', id: 9 }, '2026-10-10', [{ menuItemId: 1, servings: 1 }], recipes, new Map([[1, 0], [2, 0]]))
+    const result = computeOrderShortfalls([{ menuItemId: 1, servings: 1 }, { menuItemId: 2, servings: 1 }], recipes, stock, { prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-10' }, [other])
+    expect(result.shortfalls[0]).toMatchObject({ required: 5, available: 3, allocated: 2, shortBy: 2, contributingItems: [1, 2] })
+    expect(result.sufficient).toBe(false)
+  })
+  it('excludes the order itself but not sibling demand', () => {
+    const stock = new Map([[7, { name: 'Rice', unit: 'kg', currentStock: 4 }]])
+    const sibling = buildCommitment({ type: 'booking', id: 12 }, '2026-10-10', [{ menuItemId: 1, servings: 1 }], recipes, new Map([[1, 0], [2, 0]]))
+    const result = computeOrderShortfalls([{ menuItemId: 1, servings: 1 }, { menuItemId: 2, servings: 1 }], recipes, stock, { prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-10' }, [sibling], { type: 'booking', id: 12 })
+    expect(result.shortfalls[0]).toMatchObject({ required: 5, allocated: 0, available: 4, shortBy: 1, contributingItems: [1, 2] })
+  })
+  it('ignores non-overlapping commitments', () => {
+    const stock = new Map([[7, { name: 'Rice', unit: 'kg', currentStock: 10 }]])
+    const outside = buildCommitment({ type: 'booking', id: 13 }, '2026-11-10', [{ menuItemId: 1, servings: 10 }], recipes, new Map([[1, 0], [2, 0]]))
+    expect(computeOrderShortfalls([{ menuItemId: 1, servings: 1 }], recipes, stock, { prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-10' }, [outside]).sufficient).toBe(true)
+  })
 })

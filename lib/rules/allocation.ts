@@ -24,6 +24,48 @@ export interface AllocationShortfall {
   allocated: number
 }
 
+export interface OrderAllocationShortfall extends AllocationShortfall {
+  contributingItems: number[]
+}
+
+export type StockByIngredientId = Map<number, { name: string; unit: string; currentStock: number }>
+
+export interface OrderShortfallResult {
+  sufficient: boolean
+  shortfalls: OrderAllocationShortfall[]
+}
+
+export function computeOrderShortfalls(
+  items: { menuItemId: number; servings: number }[],
+  recipes: Map<number, { ingredientId: number; qtyPerServing: number }[]>,
+  stockById: StockByIngredientId,
+  window: { prepStartDate: string; fulfillmentDate: string },
+  commitments: AllocationCommitment[],
+  excludeRef?: CommitmentRef,
+): OrderShortfallResult {
+  const requiredByIngredient = new Map<number, { required: number; contributingItems: number[] }>()
+  for (const item of items) {
+    for (const recipe of recipes.get(item.menuItemId) ?? []) {
+      const current = requiredByIngredient.get(recipe.ingredientId) ?? { required: 0, contributingItems: [] }
+      current.required += item.servings * recipe.qtyPerServing
+      if (!current.contributingItems.includes(item.menuItemId)) current.contributingItems.push(item.menuItemId)
+      requiredByIngredient.set(recipe.ingredientId, current)
+    }
+  }
+
+  const shortfalls = [...requiredByIngredient].flatMap(([ingredientId, demand]) => {
+    const stock = stockById.get(ingredientId)
+    if (!stock) return []
+    const allocated = calculateAllocatedQuantity(ingredientId, window, commitments, excludeRef)
+    const available = Math.max(0, stock.currentStock - allocated)
+    return available < demand.required
+      ? [{ ingredientName: stock.name, required: demand.required, available, shortBy: demand.required - available, unitOfMeasure: stock.unit, allocated, contributingItems: demand.contributingItems }]
+      : []
+  })
+  return { sufficient: shortfalls.length === 0, shortfalls }
+}
+
+
 export function servingsForOrder(kind: 'booking' | 'meal_prep', guestCount?: number | null, mealsPerCycle?: number | null): number {
   const servings = kind === 'booking' ? Number(guestCount) : Number(mealsPerCycle)
   return Number.isFinite(servings) && servings > 0 ? servings : 1
