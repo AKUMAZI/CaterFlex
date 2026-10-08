@@ -202,9 +202,7 @@ export default function InventoryPage() {
   const [formQuantity, setFormQuantity] = useState('');
   const [formUnit, setFormUnit] = useState('pcs');
   const [formCategory, setFormCategory] = useState<Exclude<IngredientCategory, 'all' | 'low'>>('produce');
-  const [formAllergyTags, setFormAllergyTags] = useState<string[]>([]);
   const [formSaving, setFormSaving] = useState(false);
-  const allergyTagOptions = ['dairy', 'eggs', 'gluten', 'peanuts', 'shellfish', 'soy'];
   const measurementOptions = ['kg', 'g', 'ml', 'l', 'tsp', 'tbsp', 'cup', 'oz', 'lb', 'pcs'];
 
   const normalizeMeasurementUnit = (unit: string) => {
@@ -490,7 +488,6 @@ export default function InventoryPage() {
   setFormQuantity('');
   setFormUnit('pcs');
   setFormCategory('produce');
-  setFormAllergyTags([]);
   setFormOpen(true);
   };
 
@@ -501,7 +498,6 @@ export default function InventoryPage() {
   setFormQuantity(String(ingredient.currentStock));
   setFormUnit(normalizeMeasurementUnit(ingredient.unit));
   setFormCategory(ingredient.category === 'other' ? 'pantry' : ingredient.category);
-  setFormAllergyTags([]);
   setFormOpen(true);
   };
 
@@ -1080,18 +1076,7 @@ export default function InventoryPage() {
   <option value="herbs_spices">Herbs & spices</option>
   </select>
   </label>
-  <fieldset className="rounded-xl border border-slate-200 p-3">
-  <legend className="px-1 text-sm font-semibold text-slate-700">Allergy tags</legend>
-  <div className="grid grid-cols-2 gap-2">
-  {allergyTagOptions.map((tag) => (
-    <label key={tag} className="flex items-center gap-2 text-sm font-normal text-slate-700">
-      <input type="checkbox" checked={formAllergyTags.includes(tag)} onChange={(event) => setFormAllergyTags((current) => event.target.checked ? [...current, tag] : current.filter((item) => item !== tag))} className="size-4 accent-[#b85c38]" />
-      {tag}
-    </label>
-  ))}
-  </div>
-  <p className="mt-2 text-xs font-normal text-slate-500">Use the same allergy tags configured for menu items.</p>
-  </fieldset>
+
   </div>
               <div className="mt-6 flex justify-end gap-3">
                 <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100" disabled={formSaving}>Cancel</button>
