@@ -7,6 +7,7 @@ export async function createIngredient(input: {
   name: string;
   quantity: number;
   category: string;
+  unit: string;
 }) {
   const owner = await requireRole('owner');
 
@@ -25,8 +26,8 @@ export async function createIngredient(input: {
     .insert({
       IngredientName: name,
       CurrentStock: input.quantity,
-      category: input.category,
-      UnitOfMeasure: 'units',
+    category: input.category,
+    UnitOfMeasure: input.unit.trim(),
       MaxStorageCapacity: Math.max(input.quantity, 100),
     })
     .select('IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, category')
@@ -42,7 +43,7 @@ export async function createIngredient(input: {
 
 export async function updateIngredient(
   ingredientId: number,
-  input: { name: string; quantity: number; category: string }
+  input: { name: string; quantity: number; category: string; unit: string }
 ) {
   const owner = await requireRole('owner');
 
@@ -58,7 +59,7 @@ export async function updateIngredient(
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('INGREDIENT')
-    .update({ IngredientName: name, CurrentStock: input.quantity, category: input.category })
+    .update({ IngredientName: name, CurrentStock: input.quantity, category: input.category, UnitOfMeasure: input.unit.trim() })
     .eq('IngredientID', ingredientId)
     .select('IngredientID, OperatorID, IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity, category')
     .single();

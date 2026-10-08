@@ -200,8 +200,12 @@ export default function InventoryPage() {
   const [formId, setFormId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formQuantity, setFormQuantity] = useState('');
+  const [formUnit, setFormUnit] = useState('units');
   const [formCategory, setFormCategory] = useState<Exclude<IngredientCategory, 'all' | 'low'>>('produce');
+  const [formAllergyTags, setFormAllergyTags] = useState<string[]>([]);
   const [formSaving, setFormSaving] = useState(false);
+  const allergyTagOptions = ['dairy', 'eggs', 'gluten', 'peanuts', 'shellfish', 'soy', 'tree nuts', 'other'];
+  const measurementOptions = ['units', 'grams', 'kilograms', 'milliliters', 'liters', 'teaspoons', 'tablespoons', 'cups', 'ounces', 'pounds'];
   const [dishFormOpen, setDishFormOpen] = useState(false);
   const [dishFormMode, setDishFormMode] = useState<'add' | 'edit'>('add');
   const [dishFormId, setDishFormId] = useState<string | null>(null);
@@ -466,32 +470,36 @@ export default function InventoryPage() {
     setFormMode('add');
     setFormId(null);
     setFormName('');
-    setFormQuantity('');
-    setFormCategory('produce');
-    setFormOpen(true);
+  setFormQuantity('');
+  setFormUnit('units');
+  setFormCategory('produce');
+  setFormAllergyTags([]);
+  setFormOpen(true);
   };
 
   const openEditIngredient = (ingredient: Ingredient) => {
     setFormMode('edit');
     setFormId(ingredient.id);
     setFormName(ingredient.name);
-    setFormQuantity(String(ingredient.currentStock));
-    setFormCategory(ingredient.category === 'other' ? 'pantry' : ingredient.category);
-    setFormOpen(true);
+  setFormQuantity(String(ingredient.currentStock));
+  setFormUnit(ingredient.unit || 'units');
+  setFormCategory(ingredient.category === 'other' ? 'pantry' : ingredient.category);
+  setFormAllergyTags([]);
+  setFormOpen(true);
   };
 
   const handleIngredientSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const quantity = Number(formQuantity);
-    if (!formName.trim() || !Number.isFinite(quantity) || quantity < 0) {
-      alert('Enter a valid ingredient name and quantity.');
+  if (!formName.trim() || !formUnit.trim() || !Number.isFinite(quantity) || quantity < 0) {
+  alert('Enter a valid ingredient name, quantity, and measurement.');
       return;
     }
 
     setFormSaving(true);
     const result = formMode === 'add'
-      ? await createIngredient({ name: formName, quantity, category: formCategory })
-      : await updateIngredient(Number(formId), { name: formName, quantity, category: formCategory });
+  ? await createIngredient({ name: formName, quantity, category: formCategory, unit: formUnit })
+  : await updateIngredient(Number(formId), { name: formName, quantity, category: formCategory, unit: formUnit });
 
     if (!result.ok) {
       alert(`Failed to ${formMode === 'add' ? 'add' : 'update'} ingredient: ${result.error}`);
@@ -1032,22 +1040,42 @@ export default function InventoryPage() {
                   Name
                   <input value={formName} onChange={(event) => setFormName(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
                 </label>
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                  Quantity
-                  <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
-                </label>
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                  Category
-                  <select value={formCategory} onChange={(event) => setFormCategory(event.target.value as typeof formCategory)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20">
-                    <option value="meats">Meats</option>
-                    <option value="dairy">Dairy</option>
-                    <option value="baking">Baking</option>
-                    <option value="produce">Produce</option>
-                    <option value="pantry">Pantry</option>
-                    <option value="herbs_spices">Herbs & spices</option>
-                  </select>
-                </label>
-              </div>
+  <div className="grid grid-cols-2 gap-4">
+  <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+  Quantity
+  <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
+  </label>
+  <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+  Measurement
+  <select value={formUnit} onChange={(event) => setFormUnit(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20">
+  {measurementOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+  </select>
+  </label>
+  </div>
+  <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+  Category
+  <select value={formCategory} onChange={(event) => setFormCategory(event.target.value as typeof formCategory)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20">
+  <option value="meats">Meats</option>
+  <option value="dairy">Dairy</option>
+  <option value="baking">Baking</option>
+  <option value="produce">Produce</option>
+  <option value="pantry">Pantry</option>
+  <option value="herbs_spices">Herbs & spices</option>
+  </select>
+  </label>
+  <fieldset className="rounded-xl border border-slate-200 p-3">
+  <legend className="px-1 text-sm font-semibold text-slate-700">Allergy tags</legend>
+  <div className="grid grid-cols-2 gap-2">
+  {allergyTagOptions.map((tag) => (
+    <label key={tag} className="flex items-center gap-2 text-sm font-normal text-slate-700">
+      <input type="checkbox" checked={formAllergyTags.includes(tag)} onChange={(event) => setFormAllergyTags((current) => event.target.checked ? [...current, tag] : current.filter((item) => item !== tag))} className="size-4 accent-[#b85c38]" />
+      {tag}
+    </label>
+  ))}
+  </div>
+  <p className="mt-2 text-xs font-normal text-slate-500">Use the same allergy tags configured for menu items.</p>
+  </fieldset>
+  </div>
               <div className="mt-6 flex justify-end gap-3">
                 <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100" disabled={formSaving}>Cancel</button>
                 <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50" disabled={formSaving}>
