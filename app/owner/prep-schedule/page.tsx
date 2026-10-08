@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Clock, PackageCheck } from 'lucide-react';
 
 import { getOwnerPrepSchedule } from '@/app/actions/booking-actions';
+import { servingsForOrder } from '@/lib/rules/allocation';
 
 const OPERATOR_ID = 2;
 
@@ -145,7 +146,7 @@ export default function PrepSchedulePage() {
                   itemName: menuItem.ItemName,
                   prepStartDate,
                   prepDays,
-                  quantity: bookingItem.Quantity,
+                  quantity: servingsForOrder('booking', booking.GuestCount),
                 }];
               });
 
@@ -195,7 +196,7 @@ export default function PrepSchedulePage() {
                 return menuItem
                   ? [{
                       itemName: menuItem.ItemName,
-                      quantity: mealPrepItem.Quantity,
+                      quantity: servingsForOrder('meal_prep', undefined, order.MealsPerCycle),
                       prepTimeDays: menuItem.PrepTimeDays,
                     }]
                   : [];

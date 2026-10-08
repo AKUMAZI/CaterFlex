@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { checkSufficiencyWithAllocations } from '@/lib/macroflex'
 import { createNotification, hasNotificationForToday } from '@/lib/notifications'
-import { addDays } from '@/lib/rules/allocation'
+import { addDays, servingsForOrder } from '@/lib/rules/allocation'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       if (!menuItem || prepStartDate(String(booking.EventDate), Number(menuItem.PrepTimeDays ?? 0)) > today.toISOString().slice(0, 10)) continue
       const fulfillmentDate = String(booking.EventDate).slice(0, 10)
       const prepStart = prepStartDate(fulfillmentDate, Number(menuItem.PrepTimeDays ?? 0))
-      const result = await checkSufficiencyWithAllocations(Number(item.MenuItemID), Number(item.Quantity ?? booking.GuestCount ?? 1), prepStart, fulfillmentDate, { type: 'booking', id: Number(booking.BookingID) }, admin)
+      const result = await checkSufficiencyWithAllocations(Number(item.MenuItemID), servingsForOrder('booking', booking.GuestCount), prepStart, fulfillmentDate, { type: 'booking', id: Number(booking.BookingID) }, admin)
       checked += 1
       const type = result.sufficient ? 'prep_start_confirmed' : 'insufficient_ingredients'
       if (await hasNotificationForToday(Number(booking.OperatorID), type, { bookingId: Number(booking.BookingID) })) continue
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     for (const item of items ?? []) {
       const fulfillmentDate = String(order.NextFulfillmentDate).slice(0, 10)
       const prepStart = prepStartDate(fulfillmentDate, Number((await admin.from('MENU_ITEM').select('PrepTimeDays').eq('MenuItemID', item.MenuItemID).maybeSingle()).data?.PrepTimeDays ?? 0))
-      const result = await checkSufficiencyWithAllocations(Number(item.MenuItemID), Number(item.Quantity ?? order.MealsPerCycle ?? 1), prepStart, fulfillmentDate, { type: 'meal_prep', id: Number(order.MealPrepOrderID) }, admin)
+      const result = await checkSufficiencyWithAllocations(Number(item.MenuItemID), servingsForOrder('meal_prep', undefined, order.MealsPerCycle), prepStart, fulfillmentDate, { type: 'meal_prep', id: Number(order.MealPrepOrderID) }, admin)
       mealPrepChecked += 1
       const type = result.sufficient ? 'prep_start_confirmed' : 'insufficient_ingredients'
       const metadata = { mealPrepOrderId: Number(order.MealPrepOrderID) }

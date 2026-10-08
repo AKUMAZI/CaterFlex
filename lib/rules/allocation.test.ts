@@ -1,9 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, expandRecurringDates } from './allocation'
+import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, expandRecurringDates, servingsForOrder } from './allocation'
 
 describe('allocation rules', () => {
   const recipes = new Map([[1, [{ ingredientId: 7, qtyPerServing: 2 }]], [2, [{ ingredientId: 7, qtyPerServing: 3 }]]])
   const prepDays = new Map([[1, 2], [2, 5]])
+  it('derives servings from the order and defaults invalid values to one', () => {
+    expect(servingsForOrder('booking', 100)).toBe(100)
+    expect(servingsForOrder('meal_prep', undefined, 8)).toBe(8)
+    for (const value of [undefined, null, 0, -1]) {
+      expect(servingsForOrder('booking', value)).toBe(1)
+      expect(servingsForOrder('meal_prep', undefined, value)).toBe(1)
+    }
+  })
+  it('expands order-level servings into ingredient quantities', () => {
+    const booking = buildCommitment({ type: 'booking', id: 2 }, '2026-10-10', [{ menuItemId: 1, servings: servingsForOrder('booking', 4) }], new Map([[1, [{ ingredientId: 7, qtyPerServing: 2 }]]]), new Map([[1, 0]]))
+    expect(booking.ingredientQuantities[7]).toBe(8)
+    const requirement = [{ ingredientId: 7, name: 'Rice', unit: 'kg', requiredPerServing: 1, currentStock: 10 }]
+    expect(computeAllocationShortfalls(requirement, 5, { prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-10' }, [booking])).toMatchObject({ sufficient: false, shortfalls: [{ available: 2, allocated: 8 }] })
+  })
+  it('expands meal-prep order servings for every recurring occurrence', () => {
+    const dates = expandRecurringDates('2026-10-01', 'weekly')
+    const commitments = dates.map((date) => buildCommitment({ type: 'meal_prep', id: 3 }, date, [{ menuItemId: 1, servings: servingsForOrder('meal_prep', undefined, 3) }], new Map([[1, [{ ingredientId: 7, qtyPerServing: 2 }]]]), new Map([[1, 0]])))
+    expect(commitments).toHaveLength(dates.length)
+    expect(commitments.every((commitment) => commitment.ingredientQuantities[7] === 6)).toBe(true)
+  })
   it('expands servings into ingredient quantities', () => expect(buildCommitment({ type: 'booking', id: 1 }, '2026-10-10', [{ menuItemId: 1, servings: 2 }, { menuItemId: 2, servings: 3 }], recipes, prepDays).ingredientQuantities[7]).toBe(13))
   it('uses max prep days', () => expect(buildCommitment({ type: 'booking', id: 1 }, '2026-10-10', [{ menuItemId: 1, servings: 1 }, { menuItemId: 2, servings: 1 }], recipes, prepDays).prepStartDate).toBe('2026-10-05'))
   it('counts overlap boundaries and excludes typed refs', () => {

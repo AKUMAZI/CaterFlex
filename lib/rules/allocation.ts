@@ -24,6 +24,11 @@ export interface AllocationShortfall {
   allocated: number
 }
 
+export function servingsForOrder(kind: 'booking' | 'meal_prep', guestCount?: number | null, mealsPerCycle?: number | null): number {
+  const servings = kind === 'booking' ? Number(guestCount) : Number(mealsPerCycle)
+  return Number.isFinite(servings) && servings > 0 ? servings : 1
+}
+
 export function addDays(dateStr: string, days: number): string {
   const date = new Date(`${dateStr.slice(0, 10)}T00:00:00Z`)
   date.setUTCDate(date.getUTCDate() + days)

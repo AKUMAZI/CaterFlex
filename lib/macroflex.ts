@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { buildCommitment, computeAllocationShortfalls, expandRecurringDates, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+import { buildCommitment, computeAllocationShortfalls, expandRecurringDates, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
 
 export interface IngredientShortfall { ingredientName: string; required: number; available: number; shortBy: number; unitOfMeasure: string; allocated?: number }
 export interface SufficiencyCheckResult { sufficient: boolean; hasNoIngredients: boolean; shortfalls: IngredientShortfall[] }
@@ -60,8 +60,8 @@ export async function checkSufficiencyWithAllocations(menuItemId: number, quanti
     recipes.set(Number(row.MenuItemID), list)
   }
   const commitments: AllocationCommitment[] = []
-  for (const booking of bookings) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, String(booking.EventDate), (booking.BOOKING_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: Number(i.Quantity ?? booking.GuestCount ?? 1) })), recipes, prepDays))
-  for (const order of mealPrepOrders) for (const date of expandRecurringDates(String(order.NextFulfillmentDate), order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: Number(i.Quantity ?? order.MealsPerCycle ?? 1) })), recipes, prepDays))
+  for (const booking of bookings) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, String(booking.EventDate), (booking.BOOKING_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('booking', booking.GuestCount) })), recipes, prepDays))
+  for (const order of mealPrepOrders) for (const date of expandRecurringDates(String(order.NextFulfillmentDate), order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('meal_prep', undefined, order.MealsPerCycle) })), recipes, prepDays))
   const requirements = rows.flatMap((row) => {
     const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
     return ingredient
