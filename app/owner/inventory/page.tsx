@@ -775,7 +775,7 @@ export default function InventoryPage() {
 
         {/* INGREDIENT CATEGORIES */}
         {activeTab === 'ingredients' && (
-          <div className="mt-6 flex flex-wrap gap-4">
+          <div className="mt-6 flex flex-wrap gap-4 ">
 
             {[
               [
@@ -848,8 +848,8 @@ export default function InventoryPage() {
                   }
                   className={`flex-1 min-w-48 rounded-2xl border-2 p-5 text-left transition-all ${
                     ingredientCategory === value
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border bg-muted/20 hover:bg-muted/40'
+                      ? 'border-primary bg-[#FAF6F0]'
+                      : 'border-border bg-[#FAF6F0] hover:bg-[#F5F0E8]'
                   }`}
                 >
                   <div className="flex items-start justify-between">
@@ -1034,39 +1034,135 @@ export default function InventoryPage() {
         )}
 
         {formOpen && (
-<div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-slate-950/75 p-4 backdrop-blur-[2px]">
-  <form onSubmit={handleIngredientSubmit} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl">
-  <h2 className="text-xl font-bold text-slate-900">
-                {formMode === 'add' ? 'Add ingredient' : 'Edit ingredient'}
-              </h2>
-              <div className="mt-5 flex flex-col gap-4">
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+          <div
+          className="fixed left-0 top-0 z-[9999] flex h-screen w-screen items-center justify-center bg-black/40 p-4"
+          onClick={() => {
+            if (!formSaving) {
+              setFormOpen(false)
+            }
+          }}
+        >
+            <div
+              className="w-full max-w-md rounded-2xl border border-border bg-[#FAF6F0] p-6 text-card-foreground shadow-xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {/* HEADER */}
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="font-heading text-xl font-bold text-card-foreground">
+                  {formMode === 'add'
+                    ? 'Add ingredient'
+                    : 'Edit ingredient'}
+                </h2>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!formSaving) {
+                      setFormOpen(false);
+                    }
+                  }}
+                  className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  aria-label="Close"
+                  disabled={formSaving}
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* FORM */}
+              <form
+                onSubmit={handleIngredientSubmit}
+                className="flex flex-col gap-4"
+              >
+                {/* NAME */}
+
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-card-foreground">
                   Name
-                  <input value={formName} onChange={(event) => setFormName(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
+
+                  <input
+                    value={formName}
+                    onChange={(event) =>
+                      setFormName(event.target.value)
+                    }
+                    className="w-full rounded-lg border border-border bg-[#FAF6F0] px-3 py-2.5 text-card-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    placeholder="Ingredient name"
+                    required
+                    disabled={formSaving}
+                  />
                 </label>
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+
+                {/* QUANTITY */}
+
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-card-foreground">
                   Quantity
-                  <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formQuantity}
+                    onChange={(event) =>
+                      setFormQuantity(event.target.value)
+                    }
+                    className="w-full rounded-lg border border-border bg-[#FAF6F0] px-3 py-2.5 text-card-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    placeholder="0"
+                    required
+                    disabled={formSaving}
+                  />
                 </label>
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+
+                {/* CATEGORY */}
+
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-card-foreground">
                   Category
-                  <select value={formCategory} onChange={(event) => setFormCategory(event.target.value as typeof formCategory)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20">
+
+                  <select
+                    value={formCategory}
+                    onChange={(event) =>
+                      setFormCategory(
+                        event.target.value as typeof formCategory
+                      )
+                    }
+                    className="w-full rounded-lg border border-border bg-[#FAF6F0] px-3 py-2.5 text-card-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    disabled={formSaving}
+                  >
                     <option value="meats">Meats</option>
                     <option value="dairy">Dairy</option>
                     <option value="baking">Baking</option>
                     <option value="produce">Produce</option>
                     <option value="pantry">Pantry</option>
-                    <option value="herbs_spices">Herbs & spices</option>
+                    <option value="herbs_spices">
+                      Herbs & spices
+                    </option>
                   </select>
                 </label>
-              </div>
-              <div className="mt-6 flex justify-end gap-3">
-                <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100" disabled={formSaving}>Cancel</button>
-                <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50" disabled={formSaving}>
-                  {formSaving ? 'Saving...' : formMode === 'add' ? 'Add ingredient' : 'Save changes'}
-                </button>
-              </div>
-            </form>
+
+                {/* BUTTONS */}
+
+                <div className="mt-2 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormOpen(false)}
+                    className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-card-foreground transition hover:bg-muted"
+                    disabled={formSaving}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+                    disabled={formSaving}
+                  >
+                    {formSaving
+                      ? 'Saving...'
+                      : formMode === 'add'
+                        ? 'Add ingredient'
+                        : 'Save changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
 

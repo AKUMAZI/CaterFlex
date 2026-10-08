@@ -41,7 +41,7 @@ export async function getOwnerDashboardData() {
     const { data: bookingRows, error: bookingError } = await admin
       .from('BOOKING')
       .select(
-        'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status'
+        'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, CreatedAt'
       )
       .eq('OperatorID', 2)
       .order('EventDate', { ascending: false })
@@ -222,27 +222,28 @@ export async function getOwnerDashboardData() {
     // --------------------------------------------------
     // RECENT ACTIVITY
     // --------------------------------------------------
+
     const recentActivity: DashboardActivity[] = [...bookings]
-      .sort((a, b) => {
-        const dateA = new Date(
-          `${a.EventDate}T${a.EventTime || '00:00:00'}`
-        ).getTime()
+    .sort((a, b) => {
+    const dateA = new Date(
+        String(a.CreatedAt)
+    ).getTime()
 
-        const dateB = new Date(
-          `${b.EventDate}T${b.EventTime || '00:00:00'}`
-        ).getTime()
+    const dateB = new Date(
+        String(b.CreatedAt)
+    ).getTime()
 
-        return dateB - dateA
-      })
-      .slice(0, 5)
-      .map((booking) => ({
-        id: String(booking.BookingID),
-        customerName:
-          customerMap.get(Number(booking.CustomerID))?.Name ??
-          'Unknown customer',
-        status: String(booking.Status).toLowerCase(),
-        createdAt: booking.EventDate,
-      }))
+    return dateB - dateA
+    })
+    .slice(0, 5)
+    .map((booking) => ({
+    id: String(booking.BookingID),
+    customerName:
+        customerMap.get(Number(booking.CustomerID))?.Name ??
+        'Unknown customer',
+    status: String(booking.Status).toLowerCase(),
+    createdAt: String(booking.CreatedAt),
+    }))
 
     // --------------------------------------------------
     // LIVE ALERTS
@@ -258,56 +259,58 @@ export async function getOwnerDashboardData() {
 
     // --------------------------------------------------
     // REVENUE BY DAY
-    // --------------------------------------------------
-    const revenueMap = new Map<string, number>()
 
-    for (const payment of payments) {
-      if (String(payment.Status).toLowerCase() !== 'paid') {
-        continue
-      }
+// --------------------------------------------------
 
-      const date = String(payment.DatePaid).split('T')[0]
+const revenueMap = new Map<string, number>()
 
-      revenueMap.set(
-        date,
-        (revenueMap.get(date) ?? 0) +
-          Number(payment.Amount ?? 0)
-      )
-    }
+for (const payment of payments) {
+  if (String(payment.Status).toLowerCase() !== 'paid') {
+    continue
+  }
 
-    const revenueData: RevenuePoint[] = Array.from(const revenueData: RevenuePoint[] = []
+  const date = String(payment.DatePaid).split('T')[0]
 
-        const today = new Date()
-        
-        for (let i = 29; i >= 0; i--) {
-          const date = new Date(today)
-        
-          date.setHours(0, 0, 0, 0)
-          date.setDate(today.getDate() - i)
-        
-          const dateKey = date.toISOString().split('T')[0]
-        
-          revenueData.push({
-            date: dateKey,
-            revenue: revenueMap.get(dateKey) ?? 0,
-          })
-        }
+  revenueMap.set(
+    date,
+    (revenueMap.get(date) ?? 0) +
+      Number(payment.Amount ?? 0)
+  )
+}
 
-    return {
-      ok: true as const,
-      data: {
-        pendingBookings,
-        confirmedBookings,
-        lowStockItems: lowStockIngredients.length,
-        outstandingBalance,
-        totalBookings: bookings.length,
-        completionRate,
-        totalRevenue,
-        recentActivity,
-        alerts,
-        revenueData,
-      },
-    }
+const revenueData: RevenuePoint[] = []
+
+const today = new Date()
+
+for (let i = 29; i >= 0; i--) {
+  const date = new Date(today)
+
+  date.setHours(0, 0, 0, 0)
+  date.setDate(today.getDate() - i)
+
+  const dateKey = date.toISOString().split('T')[0]
+
+  revenueData.push({
+    date: dateKey,
+    revenue: revenueMap.get(dateKey) ?? 0,
+  })
+}
+
+return {
+  ok: true as const,
+  data: {
+    pendingBookings,
+    confirmedBookings,
+    lowStockItems: lowStockIngredients.length,
+    outstandingBalance,
+    totalBookings: bookings.length,
+    completionRate,
+    totalRevenue,
+    recentActivity,
+    alerts,
+    revenueData,
+  },
+}
   } catch (error) {
     console.error('Owner dashboard loading error:', error)
 

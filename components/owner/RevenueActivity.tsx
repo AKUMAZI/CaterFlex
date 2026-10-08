@@ -8,9 +8,11 @@ import {
   YAxis,
 } from 'recharts'
 import { MoreHorizontal } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+
 
 import {
   ChartContainer,
@@ -44,6 +46,7 @@ const chartConfig = {
     color: '#BA6A4C',
   },
 } satisfies ChartConfig
+
 
 const AVATAR_COLORS = [
   '#BA6A4C',
@@ -127,6 +130,7 @@ export function RevenueActivity({
   revenueData,
   recentActivity,
 }: RevenueActivityProps) {
+  const router = useRouter()
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
 
@@ -299,6 +303,7 @@ export function RevenueActivity({
             variant="outline"
             size="sm"
             className="flex-shrink-0"
+            onClick={() => router.push('/owner/bookings')}
           >
             View all
           </Button>

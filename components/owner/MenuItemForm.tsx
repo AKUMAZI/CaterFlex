@@ -1056,7 +1056,7 @@ export function MenuItemForm({
                       JPG, PNG, or WebP. Maximum 5 MB.
                     </p>
 
-                    <label className="inline-flex w-fit cursor-pointer items-center rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-card-foreground transition hover:bg-muted">
+                    <label className="inline-flex w-fit cursor-pointer items-center rounded-lg border border-border bg-[#F5F0E8] px-4 py-2 text-sm font-medium text-card-foreground transition hover:bg-muted">
                       Choose Photo
                       <input
                         type="file"
