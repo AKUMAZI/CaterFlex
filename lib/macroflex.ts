@@ -38,6 +38,7 @@ async function loadCommitments(
   client: typeof supabase,
   recipes: Map<number, { ingredientId: number; qtyPerServing: number }[]>,
   prepDays: Map<number, number>,
+  candidateMenuItemIds: number[],
 ): Promise<AllocationCommitment[]> {
   const bookingsQuery = client.from('BOOKING').select('BookingID, EventDate, GuestCount, BOOKING_ITEM(MenuItemID, Quantity)').eq('Status', 'confirmed')
   const mealPrepQuery = client.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, MEAL_PREP_ITEM(MenuItemID, Quantity)').eq('Status', 'active').not('NextFulfillmentDate', 'is', null)
@@ -46,6 +47,29 @@ async function loadCommitments(
   if (mealPrepError) throw mealPrepError
   const bookings = (bookingData ?? []) as unknown as BookingRow[]
   const mealPrepOrders = (mealPrepData ?? []) as unknown as MealPrepRow[]
+  const menuItemIds = [...new Set([
+    ...candidateMenuItemIds,
+    ...bookings.flatMap((booking) => (booking.BOOKING_ITEM ?? []).map((item) => Number(item.MenuItemID))),
+    ...mealPrepOrders.flatMap((order) => (order.MEAL_PREP_ITEM ?? []).map((item) => Number(item.MenuItemID))),
+  ])]
+  const [{ data: menuData, error: menuError }, { data: recipeData, error: recipeError }] = await Promise.all([
+    client.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuItemIds),
+    client.from('DISH_INGREDIENT').select('MenuItemID, IngredientID, QuantityRequiredPerServing').in('MenuItemID', menuItemIds),
+  ])
+  if (menuError) throw menuError
+  if (recipeError) throw recipeError
+  for (const menu of (menuData ?? []) as unknown as MenuRow[]) {
+    const menuItemId = Number(menu.MenuItemID)
+    if (!prepDays.has(menuItemId)) prepDays.set(menuItemId, Number(menu.PrepTimeDays ?? 0))
+  }
+  for (const row of (recipeData ?? []) as unknown as Array<{ MenuItemID: number; IngredientID: number; QuantityRequiredPerServing: number }>) {
+    const menuItemId = Number(row.MenuItemID)
+    const list = recipes.get(menuItemId) ?? []
+    if (!list.some((recipe) => recipe.ingredientId === Number(row.IngredientID))) {
+      list.push({ ingredientId: Number(row.IngredientID), qtyPerServing: Number(row.QuantityRequiredPerServing ?? 0) })
+    }
+    recipes.set(menuItemId, list)
+  }
   const commitments: AllocationCommitment[] = []
   for (const booking of bookings) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, String(booking.EventDate), (booking.BOOKING_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('booking', booking.GuestCount) })), recipes, prepDays))
   for (const order of mealPrepOrders) for (const date of expandRecurringDates(String(order.NextFulfillmentDate), order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('meal_prep', undefined, order.MealsPerCycle) })), recipes, prepDays))
@@ -69,7 +93,7 @@ export async function checkSufficiencyWithAllocations(menuItemId: number, quanti
     list.push({ ingredientId: Number(row.IngredientID), qtyPerServing: Number(row.QuantityRequiredPerServing ?? 0) })
     recipes.set(Number(row.MenuItemID), list)
   }
-  const commitments = await loadCommitments(client, recipes, prepDays)
+  const commitments = await loadCommitments(client, recipes, prepDays, [menuItemId])
   const requirements = rows.flatMap((row) => {
     const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
     return ingredient ? [{ ingredientId: Number(ingredient.IngredientID ?? row.IngredientID), name: ingredient.IngredientName, unit: ingredient.UnitOfMeasure, requiredPerServing: Number(row.QuantityRequiredPerServing ?? 0), currentStock: Number(ingredient.CurrentStock ?? 0) }] : []
@@ -101,7 +125,7 @@ export async function checkOrderSufficiencyWithAllocations(items: { menuItemId: 
     const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
     if (ingredient) stockById.set(Number(ingredient.IngredientID), { name: ingredient.IngredientName, unit: ingredient.UnitOfMeasure, currentStock: Number(ingredient.CurrentStock ?? 0) })
   }
-  const commitments = await loadCommitments(client, recipes, prepDays)
+  const commitments = await loadCommitments(client, recipes, prepDays, menuIds)
   const window = orderPrepWindow(fulfillmentDate, items.map((item) => prepDays.get(Number(item.menuItemId)) ?? 0))
   const result = computeOrderShortfalls(items.map((item) => ({ menuItemId: Number(item.menuItemId), servings })), recipes, stockById, window, commitments, excludeRef)
   const itemNames = new Map(menus.map((menu) => [Number(menu.MenuItemID), menu.ItemName]))
