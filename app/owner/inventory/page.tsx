@@ -200,12 +200,29 @@ export default function InventoryPage() {
   const [formId, setFormId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formQuantity, setFormQuantity] = useState('');
-  const [formUnit, setFormUnit] = useState('units');
+  const [formUnit, setFormUnit] = useState('pcs');
   const [formCategory, setFormCategory] = useState<Exclude<IngredientCategory, 'all' | 'low'>>('produce');
   const [formAllergyTags, setFormAllergyTags] = useState<string[]>([]);
   const [formSaving, setFormSaving] = useState(false);
   const allergyTagOptions = ['dairy', 'eggs', 'gluten', 'peanuts', 'shellfish', 'soy'];
-  const measurementOptions = ['units', 'grams', 'kilograms', 'milliliters', 'liters', 'teaspoons', 'tablespoons', 'cups', 'ounces', 'pounds'];
+  const measurementOptions = ['kg', 'g', 'ml', 'l', 'tsp', 'tbsp', 'cup', 'oz', 'lb', 'pcs'];
+
+  const normalizeMeasurementUnit = (unit: string) => {
+    const legacyUnits: Record<string, string> = {
+      units: 'pcs',
+      grams: 'g',
+      kilograms: 'kg',
+      milliliters: 'ml',
+      liters: 'l',
+      teaspoons: 'tsp',
+      tablespoons: 'tbsp',
+      cups: 'cup',
+      ounces: 'oz',
+      pounds: 'lb',
+    };
+
+    return legacyUnits[unit.toLowerCase()] ?? (measurementOptions.includes(unit) ? unit : 'pcs');
+  };
   const [dishFormOpen, setDishFormOpen] = useState(false);
   const [dishFormMode, setDishFormMode] = useState<'add' | 'edit'>('add');
   const [dishFormId, setDishFormId] = useState<string | null>(null);
@@ -471,7 +488,7 @@ export default function InventoryPage() {
     setFormId(null);
     setFormName('');
   setFormQuantity('');
-  setFormUnit('units');
+  setFormUnit('pcs');
   setFormCategory('produce');
   setFormAllergyTags([]);
   setFormOpen(true);
@@ -482,7 +499,7 @@ export default function InventoryPage() {
     setFormId(ingredient.id);
     setFormName(ingredient.name);
   setFormQuantity(String(ingredient.currentStock));
-  setFormUnit(ingredient.unit || 'units');
+  setFormUnit(normalizeMeasurementUnit(ingredient.unit));
   setFormCategory(ingredient.category === 'other' ? 'pantry' : ingredient.category);
   setFormAllergyTags([]);
   setFormOpen(true);
@@ -1046,7 +1063,7 @@ export default function InventoryPage() {
   <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
   </label>
   <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-  Measurement
+  Measurement unit
   <select value={formUnit} onChange={(event) => setFormUnit(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20">
   {measurementOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
   </select>
