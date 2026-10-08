@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { checkSufficiencyWithAllocations } from '@/lib/macroflex'
 import { createNotification, hasNotificationForToday } from '@/lib/notifications'
+import { addDays } from '@/lib/rules/allocation'
 
 export const dynamic = 'force-dynamic'
 
-function prepStartDate(eventDate: string, prepDays: number) {
-  const date = new Date(`${eventDate}T00:00:00`)
-  date.setDate(date.getDate() - Math.max(0, prepDays))
-  return date
+function prepStartDate(eventDate: string, prepDays: number): string {
+  return addDays(eventDate, -Math.max(0, prepDays))
 }
 
 export async function GET(request: NextRequest) {
@@ -36,9 +35,9 @@ export async function GET(request: NextRequest) {
     const { data: items } = await admin.from('BOOKING_ITEM').select('MenuItemID, Quantity').eq('BookingID', booking.BookingID)
     for (const item of items ?? []) {
       const { data: menuItem } = await admin.from('MENU_ITEM').select('ItemName, PrepTimeDays').eq('MenuItemID', item.MenuItemID).maybeSingle()
-      if (!menuItem || prepStartDate(String(booking.EventDate), Number(menuItem.PrepTimeDays ?? 0)) > today) continue
+      if (!menuItem || prepStartDate(String(booking.EventDate), Number(menuItem.PrepTimeDays ?? 0)) > today.toISOString().slice(0, 10)) continue
       const fulfillmentDate = String(booking.EventDate).slice(0, 10)
-      const prepStart = prepStartDate(fulfillmentDate, Number(menuItem.PrepTimeDays ?? 0)).toISOString().slice(0, 10)
+      const prepStart = prepStartDate(fulfillmentDate, Number(menuItem.PrepTimeDays ?? 0))
       const result = await checkSufficiencyWithAllocations(Number(item.MenuItemID), Number(item.Quantity ?? booking.GuestCount ?? 1), prepStart, fulfillmentDate, { type: 'booking', id: Number(booking.BookingID) }, admin)
       checked += 1
       const type = result.sufficient ? 'prep_start_confirmed' : 'insufficient_ingredients'
@@ -67,7 +66,7 @@ export async function GET(request: NextRequest) {
 
     for (const item of items ?? []) {
       const fulfillmentDate = String(order.NextFulfillmentDate).slice(0, 10)
-      const prepStart = prepStartDate(fulfillmentDate, Number((await admin.from('MENU_ITEM').select('PrepTimeDays').eq('MenuItemID', item.MenuItemID).maybeSingle()).data?.PrepTimeDays ?? 0)).toISOString().slice(0, 10)
+      const prepStart = prepStartDate(fulfillmentDate, Number((await admin.from('MENU_ITEM').select('PrepTimeDays').eq('MenuItemID', item.MenuItemID).maybeSingle()).data?.PrepTimeDays ?? 0))
       const result = await checkSufficiencyWithAllocations(Number(item.MenuItemID), Number(item.Quantity ?? order.MealsPerCycle ?? 1), prepStart, fulfillmentDate, { type: 'meal_prep', id: Number(order.MealPrepOrderID) }, admin)
       mealPrepChecked += 1
       const type = result.sufficient ? 'prep_start_confirmed' : 'insufficient_ingredients'
@@ -79,11 +78,10 @@ export async function GET(request: NextRequest) {
       if (await createNotification(Number(order.OperatorID), type, message, metadata)) mealPrepNotified += 1
     }
 
-    const nextDate = new Date(`${order.NextFulfillmentDate}T00:00:00`)
-    nextDate.setDate(nextDate.getDate() + (order.RecurrencePattern === 'biweekly' ? 14 : 7))
+    const nextDate = addDays(String(order.NextFulfillmentDate), order.RecurrencePattern === 'biweekly' ? 14 : 7)
     const { error: updateError } = await admin
       .from('MEAL_PREP_ORDER')
-      .update({ NextFulfillmentDate: nextDate.toISOString().slice(0, 10) })
+      .update({ NextFulfillmentDate: nextDate })
       .eq('MealPrepOrderID', order.MealPrepOrderID)
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
   }

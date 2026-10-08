@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { buildCommitment, calculateAllocatedQuantity, expandRecurringDates, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+import { buildCommitment, computeAllocationShortfalls, expandRecurringDates, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
 
 export interface IngredientShortfall { ingredientName: string; required: number; available: number; shortBy: number; unitOfMeasure: string; allocated?: number }
 export interface SufficiencyCheckResult { sufficient: boolean; hasNoIngredients: boolean; shortfalls: IngredientShortfall[] }
@@ -62,17 +62,14 @@ export async function checkSufficiencyWithAllocations(menuItemId: number, quanti
   const commitments: AllocationCommitment[] = []
   for (const booking of bookings) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, String(booking.EventDate), (booking.BOOKING_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: Number(i.Quantity ?? booking.GuestCount ?? 1) })), recipes, prepDays))
   for (const order of mealPrepOrders) for (const date of expandRecurringDates(String(order.NextFulfillmentDate), order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: Number(i.Quantity ?? order.MealsPerCycle ?? 1) })), recipes, prepDays))
-  const shortfalls: IngredientShortfall[] = []
-  for (const row of rows) {
+  const requirements = rows.flatMap((row) => {
     const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
-    if (!ingredient) continue
-    const id = Number(ingredient.IngredientID ?? row.IngredientID)
-    const required = Number(row.QuantityRequiredPerServing ?? 0) * quantity
-    const allocated = calculateAllocatedQuantity(id, { prepStartDate, fulfillmentDate }, commitments, excludeRef)
-    const available = Math.max(0, Number(ingredient.CurrentStock ?? 0) - allocated)
-    if (available < required) shortfalls.push({ ingredientName: ingredient.IngredientName, required, available, shortBy: required - available, unitOfMeasure: ingredient.UnitOfMeasure, allocated })
-  }
-  return { sufficient: shortfalls.length === 0, hasNoIngredients: false, shortfalls }
+    return ingredient
+      ? [{ ingredientId: Number(ingredient.IngredientID ?? row.IngredientID), name: ingredient.IngredientName, unit: ingredient.UnitOfMeasure, requiredPerServing: Number(row.QuantityRequiredPerServing ?? 0), currentStock: Number(ingredient.CurrentStock ?? 0) }]
+      : []
+  })
+  const allocationResult = computeAllocationShortfalls(requirements, quantity, { prepStartDate, fulfillmentDate }, commitments, excludeRef)
+  return { sufficient: allocationResult.sufficient, hasNoIngredients: false, shortfalls: allocationResult.shortfalls }
 }
 
 export async function checkOverPurchase(operatorId?: number): Promise<{ overPurchased: OverPurchasedIngredient[] }> {

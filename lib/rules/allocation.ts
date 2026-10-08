@@ -7,6 +7,47 @@ export interface AllocationCommitment {
   ingredientQuantities: Record<number, number>
 }
 
+export interface AllocationRequirement {
+  ingredientId: number
+  name: string
+  unit: string
+  requiredPerServing: number
+  currentStock: number
+}
+
+export interface AllocationShortfall {
+  ingredientName: string
+  required: number
+  available: number
+  shortBy: number
+  unitOfMeasure: string
+  allocated: number
+}
+
+export function addDays(dateStr: string, days: number): string {
+  const date = new Date(`${dateStr.slice(0, 10)}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+export function computeAllocationShortfalls(
+  requirements: AllocationRequirement[],
+  quantity: number,
+  window: { prepStartDate: string; fulfillmentDate: string },
+  commitments: AllocationCommitment[],
+  excludeRef?: CommitmentRef,
+): { sufficient: boolean; shortfalls: AllocationShortfall[] } {
+  const shortfalls = requirements.flatMap((requirement) => {
+    const allocated = calculateAllocatedQuantity(requirement.ingredientId, window, commitments, excludeRef)
+    const required = requirement.requiredPerServing * quantity
+    const available = Math.max(0, requirement.currentStock - allocated)
+    return available < required
+      ? [{ ingredientName: requirement.name, required, available, shortBy: required - available, unitOfMeasure: requirement.unit, allocated }]
+      : []
+  })
+  return { sufficient: shortfalls.length === 0, shortfalls }
+}
+
 /** FR-8.3; thesis sections 3.2.3 and 3.2.4: count only overlapping stock commitments. */
 export function calculateAllocatedQuantity(
   ingredientId: number,
@@ -29,25 +70,22 @@ export function buildCommitment(
   prepDays: Map<number, number>,
 ): AllocationCommitment {
   const maxPrepDays = Math.max(0, ...items.map((item) => prepDays.get(item.menuItemId) ?? 0))
-  const start = new Date(`${fulfillmentDate.slice(0, 10)}T00:00:00`)
-  start.setDate(start.getDate() - maxPrepDays)
+  const prepStartDate = addDays(fulfillmentDate, -maxPrepDays)
   const ingredientQuantities: Record<number, number> = {}
   for (const item of items) {
     for (const recipe of recipes.get(item.menuItemId) ?? []) {
       ingredientQuantities[recipe.ingredientId] = (ingredientQuantities[recipe.ingredientId] ?? 0) + item.servings * recipe.qtyPerServing
     }
   }
-  return { ref, prepStartDate: start.toISOString().slice(0, 10), fulfillmentDate: fulfillmentDate.slice(0, 10), ingredientQuantities }
+  return { ref, prepStartDate, fulfillmentDate: fulfillmentDate.slice(0, 10), ingredientQuantities }
 }
 
 /** FR-8.3; thesis sections 3.2.3 and 3.2.4: model recurring meal-prep fulfillment windows. */
 export function expandRecurringDates(nextFulfillmentDate: string, pattern: 'weekly' | 'biweekly', horizonDays = 28): string[] {
   const dates: string[] = []
-  const start = new Date(`${nextFulfillmentDate.slice(0, 10)}T12:00:00`)
+  const start = nextFulfillmentDate.slice(0, 10)
   const step = pattern === 'weekly' ? 7 : 14
-  for (let date = new Date(start); date.getTime() <= start.getTime() + horizonDays * 86400000; date.setDate(date.getDate() + step)) {
-    dates.push(date.toISOString().slice(0, 10))
-  }
+  for (let offset = 0; offset <= horizonDays; offset += step) dates.push(addDays(start, offset))
   return dates
 }
 

@@ -1,4 +1,5 @@
 import type { Booking, MealPrepFrequency } from '../types';
+import { addDays } from './allocation';
 
 export function getUpcomingFulfillmentDates(
   startDate: string,
@@ -6,14 +7,9 @@ export function getUpcomingFulfillmentDates(
   count = 8
 ): string[] {
   const dates: string[] = [];
-  const start = new Date(`${startDate.slice(0, 10)}T12:00:00`);
   const stepDays = frequency === 'weekly' ? 7 : 14;
 
-  for (let i = 0; i < count; i++) {
-    const next = new Date(start);
-    next.setDate(start.getDate() + i * stepDays);
-    dates.push(next.toISOString().slice(0, 10));
-  }
+  for (let i = 0; i < count; i++) dates.push(addDays(startDate, i * stepDays));
 
   return dates;
 }

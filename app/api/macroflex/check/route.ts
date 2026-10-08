@@ -18,15 +18,23 @@ export async function GET(request: NextRequest) {
     const prepStartDate = searchParams.get('prepStartDate') ?? fulfillmentDate
     const excludeType = searchParams.get('excludeType')
     const excludeId = searchParams.get('excludeId')
-    if (!excludeType || !['booking', 'meal_prep'].includes(excludeType) || !excludeId || !Number.isInteger(Number(excludeId))) {
-      return NextResponse.json({ error: 'excludeType and excludeId are required and must be valid' }, { status: 400 })
+    if ((excludeType === null) !== (excludeId === null)) {
+      return NextResponse.json({ error: 'excludeType and excludeId must be provided together' }, { status: 400 })
+    }
+    let excludeRef: { type: 'booking' | 'meal_prep'; id: number } | undefined
+    if (excludeType !== null && excludeId !== null) {
+      const parsedId = Number(excludeId)
+      if (!['booking', 'meal_prep'].includes(excludeType) || !Number.isInteger(parsedId) || parsedId <= 0) {
+        return NextResponse.json({ error: 'excludeType and excludeId must be valid' }, { status: 400 })
+      }
+      excludeRef = { type: excludeType as 'booking' | 'meal_prep', id: parsedId }
     }
     const result = await checkSufficiencyWithAllocations(
       parseInt(menuItemId, 10),
       quantity ? parseInt(quantity, 10) : 1,
       prepStartDate,
       fulfillmentDate,
-      { type: excludeType as 'booking' | 'meal_prep', id: parseInt(excludeId, 10) },
+      excludeRef,
     )
 
     return NextResponse.json(result)
