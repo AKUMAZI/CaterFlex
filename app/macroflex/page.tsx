@@ -225,11 +225,11 @@ export default function MacroFlexPage() {
 
   return (
     <DashboardLayout>
-      <div className="mx-auto flex max-w-6xl flex-col gap-8">
+      <div className="flex flex-col gap-8">
 
         {/* HEADER */}
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-semibold tracking-tight">
+          <h1 className="font-heading text-3xl font-bold text-surface-foreground">
             MacroFlex
           </h1>
 
