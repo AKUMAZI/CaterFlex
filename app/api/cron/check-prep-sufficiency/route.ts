@@ -6,6 +6,10 @@ import { addDays, orderPrepWindow, servingsForOrder } from '@/lib/rules/allocati
 
 export const dynamic = 'force-dynamic'
 
+function todayInManila() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
+}
+
 function prepStartDate(eventDate: string, prepDays: number): string {
   return addDays(eventDate, -Math.max(0, prepDays))
 }
@@ -18,13 +22,11 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = createAdminClient()
-  const today = new Date()
-  today.setHours(23, 59, 59, 999)
+  const today = todayInManila()
   const { data: bookings, error } = await admin
     .from('BOOKING')
     .select('BookingID, OperatorID, EventDate, GuestCount')
     .eq('Status', 'confirmed')
-    .lte('EventDate', today.toISOString().slice(0, 10))
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   let checked = 0
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest) {
     const { data: menuItems } = await admin.from('MENU_ITEM').select('MenuItemID, ItemName, PrepTimeDays').in('MenuItemID', menuItemIds)
     const fulfillmentDate = String(booking.EventDate).slice(0, 10)
     const prepWindow = orderPrepWindow(fulfillmentDate, (menuItems ?? []).map((item) => Number(item.PrepTimeDays ?? 0)))
-    if (prepWindow.prepStartDate > today.toISOString().slice(0, 10)) continue
+    if (prepWindow.prepStartDate > today || fulfillmentDate < today) continue
     const result = await checkOrderSufficiencyWithAllocations(
       menuItemIds.map((menuItemId) => ({ menuItemId })),
       servingsForOrder('booking', booking.GuestCount),
@@ -62,7 +64,6 @@ export async function GET(request: NextRequest) {
     // Paused and cancelled orders are intentionally excluded from prep checks and notifications.
     .eq('Status', 'active')
     .not('NextFulfillmentDate', 'is', null)
-    .lte('NextFulfillmentDate', today.toISOString().slice(0, 10))
   if (mealPrepError) return NextResponse.json({ error: mealPrepError.message }, { status: 500 })
 
   for (const order of mealPrepOrders ?? []) {
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
     const fulfillmentDate = String(order.NextFulfillmentDate).slice(0, 10)
     const { data: menuItems } = await admin.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuItemIds)
     const prepWindow = orderPrepWindow(fulfillmentDate, (menuItems ?? []).map((item) => Number(item.PrepTimeDays ?? 0)))
-    if (menuItemIds.length && prepWindow.prepStartDate <= today.toISOString().slice(0, 10)) {
+    if (menuItemIds.length && prepWindow.prepStartDate <= today && fulfillmentDate >= today) {
       const result = await checkOrderSufficiencyWithAllocations(
         menuItemIds.map((menuItemId) => ({ menuItemId })),
         servingsForOrder('meal_prep', undefined, order.MealsPerCycle),
@@ -93,12 +94,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const nextDate = addDays(String(order.NextFulfillmentDate), order.RecurrencePattern === 'biweekly' ? 14 : 7)
-    const { error: updateError } = await admin
-      .from('MEAL_PREP_ORDER')
-      .update({ NextFulfillmentDate: nextDate })
-      .eq('MealPrepOrderID', order.MealPrepOrderID)
-    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+    let nextDate = fulfillmentDate
+    const step = order.RecurrencePattern === 'biweekly' ? 14 : 7
+    while (nextDate <= today) nextDate = addDays(nextDate, step)
+    if (nextDate !== fulfillmentDate) {
+      const { error: updateError } = await admin
+        .from('MEAL_PREP_ORDER')
+        .update({ NextFulfillmentDate: nextDate })
+        .eq('MealPrepOrderID', order.MealPrepOrderID)
+      if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ ok: true, checked, notified, mealPrepChecked, mealPrepNotified })

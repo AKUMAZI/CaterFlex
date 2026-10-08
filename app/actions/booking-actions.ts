@@ -25,12 +25,11 @@ type BookingItemInput = {
 type MealPrepOrderDetails = {
   mealPrepFrequency?: string | null
   guestCount?: number
+  eventDate?: string | null
 }
 
-function addDaysToDate(date: Date, days: number) {
-  const nextDate = new Date(date)
-  nextDate.setDate(nextDate.getDate() + days)
-  return nextDate.toISOString().slice(0, 10)
+function todayInManila() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
 }
 
 export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, items: BookingItemInput[]) {
@@ -66,7 +65,16 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
   const hasAllergenConflict = (menuItemAllergies ?? []).some((allergy) => customerAllergenNames.has(allergenNamesById.get(Number(allergy.AllergyTagID)) ?? ''))
   const mealsPerCycle = Number(orderDetails.guestCount ?? 0)
   const recurrencePattern = String(orderDetails.mealPrepFrequency ?? 'weekly').trim() || 'weekly'
-  const nextFulfillmentDate = addDaysToDate(new Date(), recurrencePattern === 'biweekly' ? 14 : 7)
+  const eventDate = String(orderDetails.eventDate ?? '').trim()
+  const parsedEventDate = /^\d{4}-\d{2}-\d{2}$/.test(eventDate)
+    ? new Date(`${eventDate}T00:00:00Z`)
+    : null
+  const isValidEventDate = parsedEventDate !== null
+    && !Number.isNaN(parsedEventDate.getTime())
+    && parsedEventDate.toISOString().slice(0, 10) === eventDate
+  if (!isValidEventDate || eventDate < todayInManila()) {
+    return { ok: false as const, error: 'Please choose a valid start date.' }
+  }
 
   if (!Number.isFinite(mealsPerCycle) || mealsPerCycle <= 0) {
     return { ok: false as const, error: 'Meals per cycle must be greater than 0.' }
@@ -84,7 +92,7 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
       MealsPerCycle: mealsPerCycle,
       Status: 'pending',
       AllergenConflictFlag: hasAllergenConflict,
-      NextFulfillmentDate: nextFulfillmentDate,
+      NextFulfillmentDate: eventDate,
     })
     .select('MealPrepOrderID')
     .single()

@@ -129,7 +129,7 @@ export default function PrepSchedulePage() {
             const customer = customers.find(
               (item) => item.CustomerID === booking.CustomerID
             );
-            const eventDate = new Date(`${booking.EventDate}T00:00:00`);
+            const eventDate = new Date(`${booking.EventDate}T12:00:00`);
             const lineItems = bookingItems
               .filter((item) => item.BookingID === booking.BookingID)
               .flatMap((bookingItem) => {
@@ -272,10 +272,10 @@ export default function PrepSchedulePage() {
 
   const scheduledMealPrep = [...mealPrep].sort((a, b) => {
     const dateA = a.nextFulfillmentDate
-      ? new Date(`${a.nextFulfillmentDate}T00:00:00`).getTime()
+      ? new Date(`${a.nextFulfillmentDate}T12:00:00`).getTime()
       : Number.POSITIVE_INFINITY;
     const dateB = b.nextFulfillmentDate
-      ? new Date(`${b.nextFulfillmentDate}T00:00:00`).getTime()
+      ? new Date(`${b.nextFulfillmentDate}T12:00:00`).getTime()
       : Number.POSITIVE_INFINITY;
     return dateA - dateB;
   });
@@ -474,7 +474,7 @@ export default function PrepSchedulePage() {
                             <div className="mt-3 pt-3 border-t border-red-200">
 
                               <p className="text-xs font-semibold text-red-700">
-                                ⚠️ Prep starts soon!
+                                ���️ Prep starts soon!
                               </p>
 
                             </div>
@@ -546,7 +546,7 @@ export default function PrepSchedulePage() {
                           <ul className="mt-3 flex flex-col gap-2">
                             {item.lineItems.map((lineItem) => {
                               const fulfillmentDate = item.nextFulfillmentDate
-                                ? new Date(`${item.nextFulfillmentDate}T00:00:00`)
+                                ? new Date(`${item.nextFulfillmentDate}T12:00:00`)
                                 : null;
                               const prepStartDate = fulfillmentDate
                                 ? new Date(fulfillmentDate)
