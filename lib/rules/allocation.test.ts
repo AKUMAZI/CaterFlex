@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, computeOrderShortfalls, expandRecurringDates, orderPrepWindow, servingsForOrder } from './allocation'
+import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, computeOrderIngredientUsage, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, servingsForOrder } from './allocation'
 
 describe('allocation rules', () => {
   const recipes = new Map([[1, [{ ingredientId: 7, qtyPerServing: 2 }]], [2, [{ ingredientId: 7, qtyPerServing: 3 }]]])
   const prepDays = new Map([[1, 2], [2, 5]])
+  it('sums shared ingredient usage and matches commitment totals', () => {
+    const usage = computeOrderIngredientUsage([{ menuItemId: 1 }, { menuItemId: 2 }], 2, recipes)
+    const commitment = buildCommitment({ type: 'booking', id: 1 }, '2026-10-10', [{ menuItemId: 1, servings: 2 }, { menuItemId: 2, servings: 2 }], recipes, prepDays)
+    expect(usage).toEqual([{ ingredientId: 7, quantity: 10 }])
+    expect(commitment.ingredientQuantities[7]).toBe(usage[0].quantity)
+  })
+  it('excludes prepared bookings and only the prepared meal-prep cycle', () => {
+    const booking = buildCommitment({ type: 'booking', id: 1 }, '2026-10-10', [{ menuItemId: 1, servings: 1 }], recipes, prepDays)
+    const firstCycle = buildCommitment({ type: 'meal_prep', id: 2 }, '2026-10-10', [{ menuItemId: 1, servings: 1 }], recipes, prepDays)
+    const nextCycle = buildCommitment({ type: 'meal_prep', id: 2 }, '2026-10-17', [{ menuItemId: 1, servings: 1 }], recipes, prepDays)
+    expect(excludePrepared([booking, firstCycle, nextCycle], new Set([1]), new Set(['2:2026-10-10']))).toEqual([nextCycle])
+  })
   it('derives servings from the order and defaults invalid values to one', () => {
     expect(servingsForOrder('booking', 100)).toBe(100)
     expect(servingsForOrder('meal_prep', undefined, 8)).toBe(8)

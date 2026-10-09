@@ -366,13 +366,15 @@ export async function getOwnerPrepSchedule() {
 
   const admin = createAdminClient()
   const operatorId = Number(owner.id)
-  const [{ data: bookings, error: bookingError }, { data: mealPrepOrders, error: mealPrepError }] = await Promise.all([
+  const [{ data: bookings, error: bookingError }, { data: mealPrepOrders, error: mealPrepError }, { data: preparationLogs, error: preparationError }] = await Promise.all([
     admin.from('BOOKING').select('BookingID, CustomerID, EventDate, EventTime, Venue, GuestCount, Status').eq('OperatorID', operatorId).eq('Status', 'confirmed'),
     admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate, Status').eq('OperatorID', operatorId).in('Status', ['pending', 'confirmed', 'active']),
+    admin.from('PREPARATION_LOG').select('BookingID, MealPrepOrderID, CycleDate').not('BookingID', 'is', null).or('BookingID.not.is.null,MealPrepOrderID.not.is.null'),
   ])
 
   if (bookingError) return { ok: false as const, error: bookingError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
   if (mealPrepError) return { ok: false as const, error: mealPrepError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
+  if (preparationError) return { ok: false as const, error: preparationError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
 
   const bookingIds = (bookings ?? []).map((booking) => booking.BookingID)
   const mealPrepOrderIds = (mealPrepOrders ?? []).map((order) => order.MealPrepOrderID)
@@ -392,7 +394,7 @@ export async function getOwnerPrepSchedule() {
   if (customerError) return { ok: false as const, error: customerError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
   if (menuItemError) return { ok: false as const, error: menuItemError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
 
-  return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [], customers: customers ?? [], menuItems: menuItems ?? [] }
+  return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [], customers: customers ?? [], menuItems: menuItems ?? [], preparationLogs: preparationLogs ?? [] }
 }
 
 export async function getOwnerFinancialData() {

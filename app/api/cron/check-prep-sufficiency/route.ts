@@ -28,12 +28,17 @@ export async function GET(request: NextRequest) {
     .select('BookingID, OperatorID, EventDate, GuestCount')
     .eq('Status', 'confirmed')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  const { data: preparationLogs, error: preparationError } = await admin.from('PREPARATION_LOG').select('BookingID, MealPrepOrderID, CycleDate')
+  if (preparationError) return NextResponse.json({ error: preparationError.message }, { status: 500 })
+  const preparedBookings = new Set((preparationLogs ?? []).filter((row) => row.BookingID != null).map((row) => Number(row.BookingID)))
+  const preparedCycles = new Set((preparationLogs ?? []).filter((row) => row.MealPrepOrderID != null && row.CycleDate).map((row) => `${Number(row.MealPrepOrderID)}:${String(row.CycleDate).slice(0, 10)}`))
 
   let checked = 0
   let notified = 0
   let mealPrepChecked = 0
   let mealPrepNotified = 0
   for (const booking of bookings ?? []) {
+    if (preparedBookings.has(Number(booking.BookingID))) continue
     const { data: items } = await admin.from('BOOKING_ITEM').select('MenuItemID, Quantity').eq('BookingID', booking.BookingID)
     const menuItemIds = (items ?? []).map((item) => Number(item.MenuItemID))
     if (!menuItemIds.length) continue
@@ -67,6 +72,8 @@ export async function GET(request: NextRequest) {
   if (mealPrepError) return NextResponse.json({ error: mealPrepError.message }, { status: 500 })
 
   for (const order of mealPrepOrders ?? []) {
+    const cycleKey = `${Number(order.MealPrepOrderID)}:${String(order.NextFulfillmentDate).slice(0, 10)}`
+    const cyclePrepared = preparedCycles.has(cycleKey)
     const { data: items } = await admin
       .from('MEAL_PREP_ITEM')
       .select('MenuItemID, Quantity')
@@ -75,7 +82,7 @@ export async function GET(request: NextRequest) {
     const fulfillmentDate = String(order.NextFulfillmentDate).slice(0, 10)
     const { data: menuItems } = await admin.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuItemIds)
     const prepWindow = orderPrepWindow(fulfillmentDate, (menuItems ?? []).map((item) => Number(item.PrepTimeDays ?? 0)))
-    if (menuItemIds.length && prepWindow.prepStartDate <= today && fulfillmentDate >= today) {
+    if (!cyclePrepared && menuItemIds.length && prepWindow.prepStartDate <= today && fulfillmentDate >= today) {
       const result = await checkOrderSufficiencyWithAllocations(
         menuItemIds.map((menuItemId) => ({ menuItemId })),
         servingsForOrder('meal_prep', undefined, order.MealsPerCycle),

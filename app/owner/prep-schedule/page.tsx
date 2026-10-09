@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Clock, PackageCheck } from 'lucide-react';
 
 import { getOwnerPrepSchedule } from '@/app/actions/booking-actions';
+import { markBookingPrepared, markMealPrepCyclePrepared } from '@/app/actions/preparation-actions';
 import { servingsForOrder } from '@/lib/rules/allocation';
 
 const OPERATOR_ID = 2;
@@ -57,6 +58,7 @@ type MealPrepItem = {
 };
 
 type CateringPrepItem = {
+  bookingId: number;
   id: string;
   customerName: string;
   eventDate: Date;
@@ -71,6 +73,7 @@ type CateringPrepItem = {
 };
 
 type MealPrepDisplayItem = {
+  orderId: number;
   id: string;
   customerName: string;
   recurrencePattern: string;
@@ -99,6 +102,9 @@ export default function PrepSchedulePage() {
   const [error, setError] = useState<string | null>(
     null
   );
+  const [preparedBookings, setPreparedBookings] = useState<Set<number>>(new Set());
+  const [preparedCycles, setPreparedCycles] = useState<Set<string>>(new Set());
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // ============================================================
   // LOAD PREP SCHEDULE FROM SUPABASE
@@ -119,6 +125,9 @@ export default function PrepSchedulePage() {
         const mealPrepItems = schedule.mealPrepItems as MealPrepItem[];
         const customers = schedule.customers as Customer[];
         const menuItems = schedule.menuItems as MenuItem[];
+        const preparationLogs = (schedule.preparationLogs ?? []) as Array<{ BookingID: number | null; MealPrepOrderID: number | null; CycleDate: string | null }>;
+        setPreparedBookings(new Set(preparationLogs.filter((log) => log.BookingID != null).map((log) => Number(log.BookingID))));
+        setPreparedCycles(new Set(preparationLogs.filter((log) => log.MealPrepOrderID != null && log.CycleDate).map((log) => `${Number(log.MealPrepOrderID)}:${String(log.CycleDate).slice(0, 10)}`)));
 
         // ========================================================
         // 9. BUILD CATERING PREPARATION SCHEDULE
@@ -151,6 +160,7 @@ export default function PrepSchedulePage() {
               });
 
             return {
+              bookingId: booking.BookingID,
               id: `catering-${booking.BookingID}`,
               customerName: customer?.Name ?? 'Unknown customer',
               eventDate,
@@ -204,6 +214,7 @@ export default function PrepSchedulePage() {
             );
 
             return {
+              orderId: order.MealPrepOrderID,
               id: `meal-prep-${order.MealPrepOrderID}`,
               customerName:
                 customer?.Name ??
@@ -279,6 +290,22 @@ export default function PrepSchedulePage() {
       : Number.POSITIVE_INFINITY;
     return dateA - dateB;
   });
+
+  const handleBookingPrepared = async (booking: CateringPrepItem) => {
+    setActionError(null);
+    if (!window.confirm('Mark this booking as prepared? Ingredient stock will be deducted once.')) return;
+    const result = await markBookingPrepared(booking.bookingId);
+    if (!result.ok) setActionError(result.error);
+    else setPreparedBookings((current) => new Set(current).add(booking.bookingId));
+  };
+
+  const handleMealPrepPrepared = async (order: MealPrepDisplayItem) => {
+    setActionError(null);
+    if (!order.nextFulfillmentDate || !window.confirm('Mark this meal-prep cycle as prepared? Ingredient stock will be deducted once.')) return;
+    const result = await markMealPrepCyclePrepared(order.orderId, order.nextFulfillmentDate.slice(0, 10));
+    if (!result.ok) setActionError(result.error);
+    else setPreparedCycles((current) => new Set(current).add(`${order.orderId}:${order.nextFulfillmentDate?.slice(0, 10)}`));
+  };
 
   // ============================================================
   // PAGE
@@ -445,6 +472,11 @@ export default function PrepSchedulePage() {
                                   }
                                 </p>
                               )}
+                              {preparedBookings.has(item.bookingId) ? (
+                                <p className="mt-3 text-sm font-medium text-emerald-700">Prepared on {new Date().toLocaleDateString()}</p>
+                              ) : (
+                                <Button className="mt-3" type="button" onClick={() => handleBookingPrepared(item)}>Mark as prepared</Button>
+                              )}
                             </div>
 
                             <div className="text-right">
@@ -583,10 +615,15 @@ export default function PrepSchedulePage() {
                         </div>
                       </div>
 
-                      <div className="mt-3 pt-3 border-t border-border">
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
                         <p className="text-xs font-medium text-muted-foreground capitalize">
                           Status: {item.status ?? 'Unknown'}
                         </p>
+                        {preparedCycles.has(`${item.orderId}:${item.nextFulfillmentDate?.slice(0, 10)}`) ? (
+                          <p className="text-sm font-medium text-emerald-700">Prepared on {new Date().toLocaleDateString()}</p>
+                        ) : (
+                          <Button type="button" onClick={() => handleMealPrepPrepared(item)}>Mark as prepared</Button>
+                        )}
                       </div>
                     </div>
                   ))}

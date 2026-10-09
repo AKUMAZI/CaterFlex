@@ -114,6 +114,31 @@ export function calculateAllocatedQuantity(
 }
 
 /** FR-8.3; thesis sections 3.2.3 and 3.2.4: expand menu servings into ingredient demand. */
+export function computeOrderIngredientUsage(
+  items: { menuItemId: number }[],
+  servings: number,
+  recipes: Map<number, { ingredientId: number; qtyPerServing: number }[]>,
+): { ingredientId: number; quantity: number }[] {
+  const usage = new Map<number, number>()
+  for (const item of items) {
+    for (const recipe of recipes.get(item.menuItemId) ?? []) {
+      usage.set(recipe.ingredientId, (usage.get(recipe.ingredientId) ?? 0) + servings * recipe.qtyPerServing)
+    }
+  }
+  return [...usage].map(([ingredientId, quantity]) => ({ ingredientId, quantity }))
+}
+
+export function excludePrepared(
+  commitments: AllocationCommitment[],
+  preparedBookingIds: Set<number>,
+  preparedMealPrepCycles: Set<string>,
+): AllocationCommitment[] {
+  return commitments.filter((commitment) => {
+    if (commitment.ref.type === 'booking') return !preparedBookingIds.has(commitment.ref.id)
+    return !preparedMealPrepCycles.has(`${commitment.ref.id}:${commitment.fulfillmentDate.slice(0, 10)}`)
+  })
+}
+
 export function buildCommitment(
   ref: CommitmentRef,
   fulfillmentDate: string,
@@ -124,8 +149,8 @@ export function buildCommitment(
   const window = orderPrepWindow(fulfillmentDate, items.map((item) => prepDays.get(item.menuItemId) ?? 0))
   const ingredientQuantities: Record<number, number> = {}
   for (const item of items) {
-    for (const recipe of recipes.get(item.menuItemId) ?? []) {
-      ingredientQuantities[recipe.ingredientId] = (ingredientQuantities[recipe.ingredientId] ?? 0) + item.servings * recipe.qtyPerServing
+    for (const usage of computeOrderIngredientUsage([{ menuItemId: item.menuItemId }], item.servings, recipes)) {
+      ingredientQuantities[usage.ingredientId] = (ingredientQuantities[usage.ingredientId] ?? 0) + usage.quantity
     }
   }
   return { ref, prepStartDate: window.prepStartDate, fulfillmentDate: window.fulfillmentDate, ingredientQuantities }
