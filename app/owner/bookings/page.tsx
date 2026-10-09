@@ -11,7 +11,9 @@ import {
   getOwnerBookings,
   updateBookingStatus as updateBookingStatusAction,
   updateMealPrepOrderStatus as updateMealPrepOrderStatusAction,
+  updateBookingItemServings,
 } from '@/app/actions/booking-actions';
+import { computeBookingTotal } from '@/lib/rules/allocation';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -80,6 +82,7 @@ type BookingDisplay = Booking & {
   mealPrepOrderId?: number;
   customer: Customer | null;
   items: {
+    bookingItemId?: number;
     name: string;
     quantity: number;
     price: number;
@@ -141,6 +144,8 @@ export default function BookingsPage() {
   const [activeSection, setActiveSection] =
     useState<BookingSection>('all');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [servingDrafts, setServingDrafts] = useState<Record<number, Record<number, number>>>({});
+  const [savingServings, setSavingServings] = useState<number | null>(null);
 
   // ============================================================
   // LOAD BOOKINGS
@@ -264,6 +269,7 @@ export default function BookingsPage() {
             .map((bookingItem) => {
               const menuItem = menuItems.find((item) => item.MenuItemID === bookingItem.MenuItemID);
               return {
+                bookingItemId: bookingItem.BookingItemID,
                 name: menuItem?.ItemName ?? `Menu Item #${bookingItem.MenuItemID}`,
                 quantity: bookingItem.Quantity,
                 price: Number(menuItem?.Price ?? 0),
@@ -417,6 +423,16 @@ export default function BookingsPage() {
     } finally {
       setUpdatingId(null);
     }
+  };
+
+  const saveBookingServings = async (booking: BookingDisplay) => {
+    if (booking.OrderType === 'meal_prep') return;
+    const draft = servingDrafts[booking.BookingID] ?? Object.fromEntries(booking.items.flatMap((item) => item.bookingItemId ? [[item.bookingItemId, item.quantity]] : []));
+    setSavingServings(booking.BookingID);
+    const result = await updateBookingItemServings(booking.BookingID, Object.entries(draft).map(([bookingItemId, servings]) => ({ bookingItemId: Number(bookingItemId), servings: Number(servings) })));
+    if (!result.ok) alert(result.error);
+    else setBookings((current) => current.map((item) => item.BookingID === booking.BookingID ? { ...item, items: item.items.map((dish) => dish.bookingItemId ? { ...dish, quantity: Number(draft[dish.bookingItemId] ?? dish.quantity) } : dish) } : item));
+    setSavingServings(null);
   };
 
   // ============================================================
@@ -633,17 +649,10 @@ export default function BookingsPage() {
                           const StatusIcon =
                             status.icon;
 
-                          const totalCost =
-                            booking.items.reduce(
-                              (
-                                total,
-                                item
-                              ) =>
-                                total +
-                                item.price *
-                                  item.quantity,
-                              0
-                            );
+                          const draft = booking.OrderType === 'catering' ? (servingDrafts[booking.BookingID] ?? {}) : {};
+                          const totalCost = booking.OrderType === 'catering'
+                            ? computeBookingTotal(booking.items.map((item) => ({ menuItemId: item.bookingItemId ?? 0, quantity: Number(draft[item.bookingItemId ?? 0] ?? item.quantity) })), new Map(booking.items.map((item) => [item.bookingItemId ?? 0, item.price])))
+                            : booking.items.reduce((total, item) => total + item.price * item.quantity, 0);
 
                           return (
                             <Card
@@ -823,34 +832,26 @@ export default function BookingsPage() {
                                               key={`${booking.BookingID}-${item.name}-${index}`}
                                               className="flex justify-between items-center p-3 bg-muted rounded-lg"
                                             >
-                                              <span className="font-medium text-card-foreground">
-                                                {
-                                                  item.name
-                                                }
+                                              <div className="flex items-center gap-3">
+                                                <span className="font-medium text-card-foreground">{item.name}</span>
+                                                {booking.OrderType === 'catering' && booking.Status?.toLowerCase() === 'pending' ? (
+                                                  <input aria-label={`${item.name} servings`} type="number" min={1} value={draft[item.bookingItemId ?? 0] ?? item.quantity} onChange={(event) => setServingDrafts((current) => ({ ...current, [booking.BookingID]: { ...(current[booking.BookingID] ?? {}), [item.bookingItemId ?? 0]: Number(event.target.value) } }))} className="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm" />
+                                                ) : <span className="text-sm text-muted-foreground">{item.quantity} servings</span>}
+                                                {booking.OrderType === 'catering' && Number(draft[item.bookingItemId ?? 0] ?? item.quantity) > booking.GuestCount && <span className="text-xs text-amber-700">Exceeds guests</span>}
+                                              </div>
 
-                                                {item.quantity >
-                                                  1 &&
-                                                  ` × ${item.quantity}`}
-                                              </span>
-
-                                              <span className="text-sm text-muted-foreground">
-                                                ₱
-                                                {(
-                                                  item.price *
-                                                  item.quantity
-                                                ).toLocaleString(
-                                                  'en-PH',
-                                                  {
-                                                    minimumFractionDigits: 2,
-                                                  }
-                                                )}
-                                              </span>
+                                              <span className="text-sm text-muted-foreground">₱{(item.price * Number(draft[item.bookingItemId ?? 0] ?? item.quantity)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
                                             </div>
                                           )
                                         )
                                       )}
 
                                     </div>
+                                    {booking.OrderType === 'catering' && booking.Status?.toLowerCase() === 'pending' && (
+                                      <Button type="button" size="sm" className="mt-3" onClick={() => saveBookingServings(booking)} disabled={savingServings === booking.BookingID}>
+                                        {savingServings === booking.BookingID ? 'Saving...' : 'Save servings'}
+                                      </Button>
+                                    )}
                                   </div>
 
                                   {/* ==================================================

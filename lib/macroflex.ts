@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-  import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, roundQuantity, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+  import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, roundQuantity, servingsForBookingItem, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface IngredientShortfall { ingredientName: string; required: number; available: number; shortBy: number; unitOfMeasure: string; allocated?: number }
@@ -76,7 +76,7 @@ async function loadCommitments(
     recipes.set(menuItemId, list)
   }
   const commitments: AllocationCommitment[] = []
-  for (const booking of bookings) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, String(booking.EventDate), (booking.BOOKING_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('booking', booking.GuestCount) })), recipes, prepDays))
+  for (const booking of bookings) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, String(booking.EventDate), (booking.BOOKING_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForBookingItem(i.Quantity, booking.GuestCount) })), recipes, prepDays))
   for (const order of mealPrepOrders) for (const date of expandRecurringDates(String(order.NextFulfillmentDate), order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((i) => ({ menuItemId: Number(i.MenuItemID), servings: servingsForOrder('meal_prep', undefined, order.MealsPerCycle) })), recipes, prepDays))
   return excludePrepared(commitments, preparedBookingIds, preparedMealPrepCycles)
 }
@@ -110,7 +110,7 @@ export async function checkSufficiencyWithAllocations(menuItemId: number, quanti
 export interface OrderSufficiencyShortfall extends IngredientShortfall { contributingItems: Array<{ menuItemId: number; itemName: string }> }
 export interface OrderSufficiencyResult { sufficient: boolean; hasNoIngredients: boolean; shortfalls: OrderSufficiencyShortfall[] }
 
-export async function checkOrderSufficiencyWithAllocations(items: { menuItemId: number }[], servings: number, fulfillmentDate: string, excludeRef?: CommitmentRef, client = supabase): Promise<OrderSufficiencyResult> {
+export async function checkOrderSufficiencyWithAllocations(items: { menuItemId: number; servings?: number }[], servings: number, fulfillmentDate: string, excludeRef?: CommitmentRef, client = supabase): Promise<OrderSufficiencyResult> {
   const menuIds = [...new Set(items.map((item) => Number(item.menuItemId)))]
   const [{ data: menuData, error: menuError }, { data: recipeData, error: recipeError }] = await Promise.all([
     client.from('MENU_ITEM').select('MenuItemID, ItemName, PrepTimeDays').in('MenuItemID', menuIds),
@@ -132,7 +132,7 @@ export async function checkOrderSufficiencyWithAllocations(items: { menuItemId: 
   }
   const commitments = await loadCommitments(client, recipes, prepDays, menuIds)
   const window = orderPrepWindow(fulfillmentDate, items.map((item) => prepDays.get(Number(item.menuItemId)) ?? 0))
-  const result = computeOrderShortfalls(items.map((item) => ({ menuItemId: Number(item.menuItemId), servings })), recipes, stockById, window, commitments, excludeRef)
+  const result = computeOrderShortfalls(items.map((item) => ({ menuItemId: Number(item.menuItemId), servings: item.servings ?? servings })), recipes, stockById, window, commitments, excludeRef)
   const itemNames = new Map(menus.map((menu) => [Number(menu.MenuItemID), menu.ItemName]))
   return { sufficient: result.sufficient, hasNoIngredients: items.every((item) => !(recipes.get(Number(item.menuItemId))?.length)), shortfalls: result.shortfalls.map((shortfall) => ({ ...shortfall, contributingItems: shortfall.contributingItems.map((menuItemId) => ({ menuItemId, itemName: itemNames.get(menuItemId) ?? '' })) })) }
 }
@@ -183,7 +183,7 @@ export async function getReservedIngredients(operatorId: number, client: Supabas
   }
   const prepDays = new Map((menuItems ?? []).map((row) => [Number(row.MenuItemID), Number(row.PrepTimeDays ?? 0)]))
   const commitments: AllocationCommitment[] = []
-  for (const booking of bookingRows) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, booking.EventDate, (booking.BOOKING_ITEM ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: servingsForOrder('booking', booking.GuestCount) })), recipeMap, prepDays))
+  for (const booking of bookingRows) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, booking.EventDate, (booking.BOOKING_ITEM ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: servingsForBookingItem(item.Quantity, booking.GuestCount) })), recipeMap, prepDays))
   for (const order of orderRows) for (const date of expandRecurringDates(order.NextFulfillmentDate, order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: servingsForOrder('meal_prep', undefined, order.MealsPerCycle) })), recipeMap, prepDays))
   return excludePrepared(commitments, preparedBookingIds, preparedMealPrepCycles).reduce<Record<number, number>>((reserved, commitment) => {
   for (const [ingredientId, quantity] of Object.entries(commitment.ingredientQuantities)) reserved[Number(ingredientId)] = roundQuantity((reserved[Number(ingredientId)] ?? 0) + quantity)

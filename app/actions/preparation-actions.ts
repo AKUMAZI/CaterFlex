@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
-import { computeOrderIngredientUsage, expandRecurringDates, servingsForOrder } from '../../lib/rules/allocation'
+import { computeOrderIngredientUsage, expandRecurringDates, servingsForBookingItem, servingsForOrder } from '../../lib/rules/allocation'
 
 async function markPrepared(input: { bookingId?: number; mealPrepOrderId?: number; cycleDate?: string }) {
   const owner = await requireRole('owner')
@@ -41,7 +41,7 @@ async function markPrepared(input: { bookingId?: number; mealPrepOrderId?: numbe
     recipeMap.set(Number(row.MenuItemID), list)
   }
   const servings = servingsForOrder(isBooking ? 'booking' : 'meal_prep', isBooking ? Number(preparedOrder.GuestCount) : undefined, isBooking ? undefined : Number(preparedOrder.MealsPerCycle))
-  const usage = computeOrderIngredientUsage((items ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID) })), servings, recipeMap)
+  const usage = computeOrderIngredientUsage((items ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: isBooking ? servingsForBookingItem(Number(item.Quantity), Number(preparedOrder.GuestCount)) : undefined })), servings, recipeMap)
   const { error: rpcError } = await admin.rpc('mark_prepared', { p_operator_id: operatorId, p_booking_id: isBooking ? id : null, p_meal_prep_order_id: isBooking ? null : id, p_cycle_date: isBooking ? null : input.cycleDate, p_usage: usage.map((item) => ({ ingredientId: item.ingredientId, quantity: item.quantity })) })
   if (rpcError) return { ok: false as const, error: rpcError.message.replace(/^.*?ERROR:\s*/i, '') }
   revalidatePath('/owner/prep-schedule')

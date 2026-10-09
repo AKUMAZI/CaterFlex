@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     const prepWindow = orderPrepWindow(fulfillmentDate, (menuItems ?? []).map((item) => Number(item.PrepTimeDays ?? 0)))
     if (prepWindow.prepStartDate > today || fulfillmentDate < today) continue
     const result = await checkOrderSufficiencyWithAllocations(
-      menuItemIds.map((menuItemId) => ({ menuItemId })),
+      (items ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: Number(item.Quantity) })),
       servingsForOrder('booking', booking.GuestCount),
       fulfillmentDate,
       { type: 'booking', id: Number(booking.BookingID) },

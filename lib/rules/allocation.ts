@@ -42,7 +42,7 @@ export interface OrderShortfallResult {
 }
 
 export function computeOrderShortfalls(
-  items: { menuItemId: number; servings: number }[],
+  items: { menuItemId: number; servings?: number }[],
   recipes: Map<number, { ingredientId: number; qtyPerServing: number }[]>,
   stockById: StockByIngredientId,
   window: { prepStartDate: string; fulfillmentDate: string },
@@ -53,7 +53,7 @@ export function computeOrderShortfalls(
   for (const item of items) {
     for (const recipe of recipes.get(item.menuItemId) ?? []) {
       const current = requiredByIngredient.get(recipe.ingredientId) ?? { required: 0, contributingItems: [] }
-      current.required += item.servings * recipe.qtyPerServing
+      current.required += (item.servings ?? 1) * recipe.qtyPerServing
       if (!current.contributingItems.includes(item.menuItemId)) current.contributingItems.push(item.menuItemId)
       requiredByIngredient.set(recipe.ingredientId, current)
     }
@@ -72,9 +72,20 @@ export function computeOrderShortfalls(
 }
 
 
+export function servingsForBookingItem(itemQuantity: number | null | undefined, guestCount: number): number {
+  const quantity = Number(itemQuantity)
+  return Number.isFinite(quantity) && Number.isInteger(quantity) && quantity >= 1
+    ? quantity
+    : Math.max(Number.isFinite(guestCount) && Number.isInteger(guestCount) && guestCount >= 1 ? guestCount : 1, 1)
+}
+
 export function servingsForOrder(kind: 'booking' | 'meal_prep', guestCount?: number | null, mealsPerCycle?: number | null): number {
   const servings = kind === 'booking' ? Number(guestCount) : Number(mealsPerCycle)
   return Number.isFinite(servings) && servings > 0 ? servings : 1
+}
+
+export function computeBookingTotal(items: { menuItemId: number; quantity: number }[], prices: Map<number, number>): number {
+  return roundQuantity(items.reduce((total, item) => total + (prices.get(item.menuItemId) ?? 0) * item.quantity, 0), 2)
 }
 
 export function addDays(dateStr: string, days: number): string {
@@ -121,14 +132,14 @@ export function calculateAllocatedQuantity(
 
 /** FR-8.3; thesis sections 3.2.3 and 3.2.4: expand menu servings into ingredient demand. */
 export function computeOrderIngredientUsage(
-  items: { menuItemId: number }[],
+  items: { menuItemId: number; servings?: number }[],
   servings: number,
   recipes: Map<number, { ingredientId: number; qtyPerServing: number }[]>,
 ): { ingredientId: number; quantity: number }[] {
   const usage = new Map<number, number>()
   for (const item of items) {
     for (const recipe of recipes.get(item.menuItemId) ?? []) {
-      usage.set(recipe.ingredientId, (usage.get(recipe.ingredientId) ?? 0) + servings * recipe.qtyPerServing)
+      usage.set(recipe.ingredientId, (usage.get(recipe.ingredientId) ?? 0) + (item.servings ?? servings) * recipe.qtyPerServing)
     }
   }
   return [...usage].map(([ingredientId, quantity]) => ({ ingredientId, quantity }))
@@ -148,14 +159,14 @@ export function excludePrepared(
 export function buildCommitment(
   ref: CommitmentRef,
   fulfillmentDate: string,
-  items: { menuItemId: number; servings: number }[],
+  items: { menuItemId: number; servings?: number }[],
   recipes: Map<number, { ingredientId: number; qtyPerServing: number }[]>,
   prepDays: Map<number, number>,
 ): AllocationCommitment {
   const window = orderPrepWindow(fulfillmentDate, items.map((item) => prepDays.get(item.menuItemId) ?? 0))
   const ingredientQuantities: Record<number, number> = {}
   for (const item of items) {
-    for (const usage of computeOrderIngredientUsage([{ menuItemId: item.menuItemId }], item.servings, recipes)) {
+    for (const usage of computeOrderIngredientUsage([{ menuItemId: item.menuItemId, servings: item.servings }], item.servings ?? 1, recipes)) {
       ingredientQuantities[usage.ingredientId] = (ingredientQuantities[usage.ingredientId] ?? 0) + usage.quantity
     }
   }

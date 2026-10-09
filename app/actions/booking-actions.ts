@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase-admin'
 import { validateBooking } from '@/lib/rules/bookingValidation'
 import type { Booking, DayOfWeek, OperatorSettings } from '@/lib/types'
 import { createNotification } from '@/lib/notifications'
+import { computeBookingTotal, servingsForBookingItem } from '@/lib/rules/allocation'
+import { revalidatePath } from 'next/cache'
 
 const BOOKING_FIELDS = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, AllergenConflictFlag'
 const BOOKING_ITEM_FIELDS = 'BookingItemID, BookingID, MenuItemID, Quantity'
@@ -320,7 +322,7 @@ const { data: booking, error } = await admin
 
   await createNotification(operatorId, 'new_booking', `New booking request for ${eventDate} at ${eventTime}.`, { bookingId: booking.BookingID })
 
-  const { error: itemError } = await admin.from('BOOKING_ITEM').insert(items.map((item) => ({ BookingID: booking.BookingID, MenuItemID: Number(item.MenuItemID), Quantity: Number(item.Quantity ?? 1) })))
+  const { error: itemError } = await admin.from('BOOKING_ITEM').insert(items.map((item) => ({ BookingID: booking.BookingID, MenuItemID: Number(item.MenuItemID), Quantity: guestCount })))
   if (itemError) {
     await admin.from('BOOKING').delete().eq('BookingID', booking.BookingID)
     return { ok: false as const, error: itemError.message }
@@ -356,6 +358,27 @@ export async function getOwnerBookings() {
   if (mealPrepItemError) return { ok: false as const, error: mealPrepItemError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
 
   return { ok: true as const, bookings: bookings ?? [], bookingItems: bookingItems ?? [], mealPrepOrders: mealPrepOrders ?? [], mealPrepItems: mealPrepItems ?? [] }
+}
+
+export async function updateBookingItemServings(bookingId: number, items: { bookingItemId: number; servings: number }[]) {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.' }
+  const admin = createAdminClient()
+  const { data: booking, error: bookingError } = await admin.from('BOOKING').select('BookingID, OperatorID, Status').eq('BookingID', bookingId).maybeSingle()
+  if (bookingError) return { ok: false as const, error: bookingError.message }
+  if (!booking || Number(booking.OperatorID) !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this booking.' }
+  if (booking.Status !== 'pending') return { ok: false as const, error: 'Servings can only be adjusted while the booking is pending.' }
+  if (items.some((item) => !Number.isInteger(item.servings) || item.servings < 1)) return { ok: false as const, error: 'Each dish must have at least 1 serving.' }
+  const { data: existingItems, error: itemError } = await admin.from('BOOKING_ITEM').select('BookingItemID').eq('BookingID', bookingId)
+  if (itemError) return { ok: false as const, error: itemError.message }
+  const validIds = new Set((existingItems ?? []).map((item) => Number(item.BookingItemID)))
+  if (items.some((item) => !validIds.has(Number(item.bookingItemId)))) return { ok: false as const, error: 'One or more dishes do not belong to this booking.' }
+  for (const item of items) {
+    const { error } = await admin.from('BOOKING_ITEM').update({ Quantity: item.servings }).eq('BookingItemID', item.bookingItemId).eq('BookingID', bookingId)
+    if (error) return { ok: false as const, error: error.message }
+  }
+  revalidatePath('/owner/bookings')
+  return { ok: true as const }
 }
 
 export async function getOwnerPrepSchedule() {
@@ -480,9 +503,9 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
       if (menuItemsError) return { ok: false as const, error: menuItemsError.message }
 
       const pricesByMenuItemId = new Map((menuItems ?? []).map((item) => [Number(item.MenuItemID), Number(item.Price ?? 0)]))
-      const totalAmount = (bookingItems ?? []).reduce(
-        (sum, item) => sum + (pricesByMenuItemId.get(Number(item.MenuItemID)) ?? 0) * Number(item.Quantity ?? 0),
-        0,
+      const totalAmount = computeBookingTotal(
+        (bookingItems ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), quantity: Number(item.Quantity ?? 0) })),
+        pricesByMenuItemId,
       )
 
       const { error: invoiceInsertError } = await admin.from('INVOICE').insert({
