@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
-import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+  import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface IngredientShortfall { ingredientName: string; required: number; available: number; shortBy: number; unitOfMeasure: string; allocated?: number }
 export interface SufficiencyCheckResult { sufficient: boolean; hasNoIngredients: boolean; shortfalls: IngredientShortfall[] }
@@ -142,13 +143,13 @@ function manilaToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 }
 
-export async function getReservedIngredients(operatorId: number): Promise<Record<number, number>> {
+export async function getReservedIngredients(operatorId: number, client: SupabaseClient = supabase): Promise<Record<number, number>> {
   const today = manilaToday()
   const [{ data: ingredients, error: ingredientError }, { data: bookings, error: bookingError }, { data: orders, error: orderError }, { data: preparationData, error: preparationError }] = await Promise.all([
-    supabase.from('INGREDIENT').select('IngredientID').eq('OperatorID', operatorId),
-    supabase.from('BOOKING').select('BookingID, EventDate, GuestCount, BOOKING_ITEM(MenuItemID, Quantity)').eq('Status', 'confirmed').gte('EventDate', today),
-    supabase.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, MEAL_PREP_ITEM(MenuItemID, Quantity)').in('Status', ['active', 'confirmed']).gte('NextFulfillmentDate', today),
-    supabase.from('PREPARATION_LOG').select('BookingID, MealPrepOrderID, CycleDate'),
+    client.from('INGREDIENT').select('IngredientID').eq('OperatorID', operatorId),
+    client.from('BOOKING').select('BookingID, EventDate, GuestCount, BOOKING_ITEM(MenuItemID, Quantity)').eq('Status', 'confirmed').gte('EventDate', today),
+    client.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, MEAL_PREP_ITEM(MenuItemID, Quantity)').in('Status', ['active', 'confirmed']).gte('NextFulfillmentDate', today),
+    client.from('PREPARATION_LOG').select('BookingID, MealPrepOrderID, CycleDate'),
   ])
   if (ingredientError) throw ingredientError
   if (bookingError) throw bookingError
@@ -167,8 +168,8 @@ export async function getReservedIngredients(operatorId: number): Promise<Record
   if (!menuItemIds.length) return {}
 
   const [{ data: recipes, error: recipeError }, { data: menuItems, error: menuError }] = await Promise.all([
-    supabase.from('DISH_INGREDIENT').select('MenuItemID, IngredientID, QuantityRequiredPerServing').in('MenuItemID', menuItemIds),
-    supabase.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuItemIds),
+    client.from('DISH_INGREDIENT').select('MenuItemID, IngredientID, QuantityRequiredPerServing').in('MenuItemID', menuItemIds),
+    client.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuItemIds),
   ])
   if (recipeError) throw recipeError
   if (menuError) throw menuError

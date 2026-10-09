@@ -8,6 +8,7 @@ import {
   createDish,
   updateDish,
   updateDishAvailability,
+  getOwnerReservedIngredients,
 } from '@/app/actions/inventory-actions';
 import { Card } from '@/components/ui/card';
 import { useEffect, useMemo, useState } from 'react';
@@ -25,7 +26,6 @@ import {
   getOverPurchasedIngredients,
   getScrapSuggestions,
 } from '@/lib/rules/macroFlex';
-import { getReservedIngredients } from '@/lib/macroflex';
 
 import type { Ingredient, MenuItem } from '@/lib/types';
 
@@ -342,10 +342,8 @@ export default function InventoryPage() {
         );
 
         setIngredients(mappedIngredients);
-        const operatorId = Number((ingredientRows as DatabaseIngredient[])[0]?.OperatorID);
-        if (Number.isFinite(operatorId)) {
-          setReservedIngredients(await getReservedIngredients(operatorId));
-        }
+        const reservedResult = await getOwnerReservedIngredients();
+        if (reservedResult.ok) setReservedIngredients(reservedResult.reserved);
         setMenuItems(mappedMenuItems);
         setUnavailableDishIds(new Set((menuItemRows ?? []).filter((item) => item.Availability === false).map((item) => String(item.MenuItemID))));
       } catch (error) {

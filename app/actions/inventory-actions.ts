@@ -2,6 +2,7 @@
 
 import { requireRole } from '@/app/actions/auth';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { getReservedIngredients } from '@/lib/macroflex';
 
 export async function createIngredient(input: {
   name: string;
@@ -106,6 +107,18 @@ export async function updateDishAvailability(dishId: number, availability: boole
   const { error } = await createAdminClient().from('MENU_ITEM').update({ Availability: availability }).eq('MenuItemID', dishId);
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const, availability };
+}
+
+export async function getOwnerReservedIngredients() {
+  const owner = await requireRole('owner');
+  if (!owner) return { ok: false as const, error: 'Owner access required.' };
+
+  try {
+    const reserved = await getReservedIngredients(Number(owner.id), createAdminClient());
+    return { ok: true as const, reserved };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : 'Unable to load reserved inventory.' };
+  }
 }
 
 export async function updateIngredientStock(

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
-import { computeOrderIngredientUsage, servingsForOrder } from '@/lib/rules/allocation'
+import { computeOrderIngredientUsage, expandRecurringDates, servingsForOrder } from '../../lib/rules/allocation'
 
 async function markPrepared(input: { bookingId?: number; mealPrepOrderId?: number; cycleDate?: string }) {
   const owner = await requireRole('owner')
@@ -19,7 +19,13 @@ async function markPrepared(input: { bookingId?: number; mealPrepOrderId?: numbe
   const { data: order, error: orderError } = await admin.from(table).select(isBooking ? 'BookingID, OperatorID, GuestCount, Status, EventDate' : 'MealPrepOrderID, OperatorID, MealsPerCycle, Status, NextFulfillmentDate').eq(idField, id).eq('OperatorID', operatorId).in('Status', isBooking ? ['confirmed'] : ['active', 'confirmed']).maybeSingle()
   if (orderError || !order) return { ok: false as const, error: orderError?.message ?? 'Order was not found or is not ready.' }
   const preparedOrder = order as Record<string, unknown>
-  if (!isBooking && input.cycleDate !== String(preparedOrder.NextFulfillmentDate).slice(0, 10)) return { ok: false as const, error: 'Choose the order’s next scheduled cycle.' }
+  if (!isBooking) {
+    const pattern = String(preparedOrder.RecurrencePattern) as 'weekly' | 'biweekly';
+    const cycleDates = expandRecurringDates(String(preparedOrder.NextFulfillmentDate), pattern);
+    if (!input.cycleDate || !cycleDates.some((date) => date.slice(0, 10) === input.cycleDate)) {
+      return { ok: false as const, error: 'Choose a scheduled cycle for this order.' };
+    }
+  }
 
   const itemTable = isBooking ? 'BOOKING_ITEM' : 'MEAL_PREP_ITEM'
   const itemField = isBooking ? 'BookingID' : 'MealPrepOrderID'
