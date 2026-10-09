@@ -369,14 +369,20 @@ export async function updateBookingItemServings(bookingId: number, items: { book
   if (!booking || Number(booking.OperatorID) !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this booking.' }
   if (booking.Status !== 'pending') return { ok: false as const, error: 'Servings can only be adjusted while the booking is pending.' }
   if (items.some((item) => !Number.isInteger(item.servings) || item.servings < 1)) return { ok: false as const, error: 'Each dish must have at least 1 serving.' }
-  const { data: existingItems, error: itemError } = await admin.from('BOOKING_ITEM').select('BookingItemID').eq('BookingID', bookingId)
+  const { data: existingItems, error: itemError } = await admin.from('BOOKING_ITEM').select('BookingItemID, MenuItemID').eq('BookingID', bookingId)
   if (itemError) return { ok: false as const, error: itemError.message }
   const validIds = new Set((existingItems ?? []).map((item) => Number(item.BookingItemID)))
   if (items.some((item) => !validIds.has(Number(item.bookingItemId)))) return { ok: false as const, error: 'One or more dishes do not belong to this booking.' }
-  for (const item of items) {
-    const { error } = await admin.from('BOOKING_ITEM').update({ Quantity: item.servings }).eq('BookingItemID', item.bookingItemId).eq('BookingID', bookingId)
-    if (error) return { ok: false as const, error: error.message }
-  }
+  const { error: updateError } = await admin.from('BOOKING_ITEM').upsert(
+    items.map((item) => ({
+      BookingItemID: item.bookingItemId,
+      BookingID: bookingId,
+      MenuItemID: (existingItems ?? []).find((existing) => Number(existing.BookingItemID) === Number(item.bookingItemId))?.MenuItemID,
+      Quantity: item.servings,
+    })),
+    { onConflict: 'BookingItemID' },
+  )
+  if (updateError) return { ok: false as const, error: updateError.message }
   revalidatePath('/owner/bookings')
   return { ok: true as const }
 }

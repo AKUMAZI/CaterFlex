@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { checkOrderSufficiencyWithAllocations } from '@/lib/macroflex'
 import { createNotification, hasNotificationForToday } from '@/lib/notifications'
-import { addDays, orderPrepWindow, servingsForOrder } from '@/lib/rules/allocation'
+import { addDays, orderPrepWindow, servingsForBookingItem, servingsForOrder } from '@/lib/rules/allocation'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     const prepWindow = orderPrepWindow(fulfillmentDate, (menuItems ?? []).map((item) => Number(item.PrepTimeDays ?? 0)))
     if (prepWindow.prepStartDate > today || fulfillmentDate < today) continue
     const result = await checkOrderSufficiencyWithAllocations(
-      (items ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: Number(item.Quantity) })),
+      (items ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: servingsForBookingItem(item.Quantity, Number(booking.GuestCount)) })),
       servingsForOrder('booking', booking.GuestCount),
       fulfillmentDate,
       { type: 'booking', id: Number(booking.BookingID) },

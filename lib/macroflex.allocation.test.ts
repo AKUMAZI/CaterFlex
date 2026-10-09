@@ -19,7 +19,7 @@ function fakeClient(extraMealPrep: Row[] = [], includeBooking = true) {
   const tables: Record<string, Row[]> = {
     MENU_ITEM: menus,
     DISH_INGREDIENT: recipes,
-    BOOKING: includeBooking ? [{ BookingID: 38, EventDate: '2026-10-24', GuestCount: 4, Status: 'confirmed', BOOKING_ITEM: [{ MenuItemID: 21, Quantity: 1 }] }] : [],
+    BOOKING: includeBooking ? [{ BookingID: 38, EventDate: '2026-10-24', GuestCount: 4, Status: 'confirmed', BOOKING_ITEM: [{ MenuItemID: 21, Quantity: 4 }] }] : [],
     MEAL_PREP_ORDER: extraMealPrep,
   }
   return {

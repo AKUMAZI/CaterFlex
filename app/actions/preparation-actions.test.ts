@@ -45,7 +45,7 @@ describe('preparation actions', () => {
 
   it('passes summed booking usage and operator id to mark_prepared', async () => {
     const booking = createQuery({ data: { BookingID: 10, OperatorID: 7, GuestCount: 4, Status: 'confirmed', EventDate: '2026-10-10' }, error: null })
-    const items = createQuery({ data: [{ MenuItemID: 3, Quantity: 1 }], error: null })
+    const items = createQuery({ data: [{ MenuItemID: 3, Quantity: 4 }], error: null })
     const recipes = createQuery({ data: [{ MenuItemID: 3, IngredientID: 9, QuantityRequiredPerServing: 2 }], error: null })
     const rpc = vi.fn(async () => ({ data: 1, error: null }))
     createAdminClient.mockReturnValue({ from: vi.fn((table: string) => table === 'BOOKING' ? booking : table === 'BOOKING_ITEM' ? items : recipes), rpc })
