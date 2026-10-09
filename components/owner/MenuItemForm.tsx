@@ -11,7 +11,8 @@ import {
   replaceDishIngredients,
   replaceMenuItemAllergies,
   updateMenuItem,
-  uploadMenuItemPhoto,
+  createMenuItemPhotoUpload,
+  saveMenuItemPhotoUrl,
 } from '@/app/actions/menu-actions'
 import { supabase } from '@/lib/supabase';
 import type { AllergenType, MenuItem } from '@/lib/types';
@@ -209,7 +210,7 @@ export function MenuItemForm({
       setIngredientId('');
       setIngredientQty('');
       setSelectedPhoto(null);
-      setPhotoPreview(item?.photoUrl ?? '');
+      setPhotoPreview(item?.photoUrl?.trim() ?? '');
 
       try {
         /*
@@ -437,7 +438,23 @@ export function MenuItemForm({
             allergyTags:
               selectedAllergens,
           }));
+          const { data: photoData, error: photoError } = await supabase
+          .from('MENU_ITEM')
+          .select('PhotoURL')
+          .eq('MenuItemID', menuItemId)
+          .maybeSingle();
+
+        if (photoError) {
+          console.error('Menu photo loading error:', photoError);
+        } else {
+          const savedPhotoUrl = photoData?.PhotoURL?.trim() ?? '';
+
+          if (savedPhotoUrl) {
+            setPhotoPreview(savedPhotoUrl);
+          }
         }
+        }
+
       } catch (error) {
         console.error(
           'Menu item form loading error:',
@@ -790,23 +807,23 @@ export function MenuItemForm({
        * ====================================
        */
       if (selectedPhoto) {
-        try {
-          await uploadMenuItemPhoto(
-            menuItemId,
-            selectedPhoto
-          );
-        } catch (error) {
-          console.error(
-            'MENU PHOTO UPLOAD ERROR:',
-            error
-          );
-
-          throw new Error(
-            error instanceof Error
-              ? error.message
-              : 'Unable to upload the menu photo.'
-          );
+        const { path, token } = await createMenuItemPhotoUpload(
+          menuItemId,
+          selectedPhoto.type,
+          selectedPhoto.size
+        )
+      
+        const { error: uploadError } = await supabase.storage
+          .from('menu-images')
+          .uploadToSignedUrl(path, token, selectedPhoto, {
+            contentType: selectedPhoto.type,
+          })
+      
+        if (uploadError) {
+          throw new Error(`Unable to upload menu photo: ${uploadError.message}`)
         }
+      
+        await saveMenuItemPhotoUrl(menuItemId, path)
       }
 
       /*

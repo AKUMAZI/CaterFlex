@@ -34,6 +34,7 @@ export default function BrowsePage() {
   } = useAppState();
 
   const [dbMenuItems, setDbMenuItems] = useState<MenuItem[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [loadingMenu, setLoadingMenu] = useState(true);
   const [showAllergenConfirm, setShowAllergenConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -245,6 +246,24 @@ export default function BrowsePage() {
   /*
    * Get currently selected menu items.
    */
+  const categories = [
+    'All',
+    ...Array.from(
+      new Set(
+        dbMenuItems
+          .map((item) => item.category?.trim())
+          .filter((category): category is string => Boolean(category))
+      )
+    ).sort((a, b) => a.localeCompare(b)),
+  ];
+  
+  const filteredMenuItems =
+    selectedCategory === 'All'
+      ? dbMenuItems
+      : dbMenuItems.filter(
+          (item) => item.category?.trim() === selectedCategory
+        );
+
   const selectedItems = dbMenuItems.filter((item) =>
     selectedMenuItemIds.includes(item.id)
   );
@@ -417,23 +436,48 @@ export default function BrowsePage() {
             <p className="text-surface-muted-foreground mt-2">
               Select items for your event
             </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {categories.map((category) => (
+                <Button
+                  key={category}
+                  type="button"
+                  variant={
+                    selectedCategory === category ? 'default' : 'outline'
+                  }
+                  onClick={() => setSelectedCategory(category)}
+                  className={
+                    selectedCategory === category
+                      ? 'rounded-full bg-primary text-white'
+                      : 'rounded-full'
+                  }
+                >
+                  {category}
+                </Button>
+              ))}
+            </div>
           </div>
 
           {loadingMenu ? (
-            <Card className="p-8 text-center">
-              <p className="text-muted-foreground">
-                Loading menu items...
-              </p>
-            </Card>
-          ) : dbMenuItems.length === 0 ? (
-            <Card className="p-8 text-center">
-              <p className="text-muted-foreground">
-                No menu items are currently available.
-              </p>
-            </Card>
-          ) : (
+          <Card className="p-8 text-center">
+            <p className="text-muted-foreground">
+              Loading menu items...
+            </p>
+          </Card>
+        ) : dbMenuItems.length === 0 ? (
+          <Card className="p-8 text-center">
+            <p className="text-muted-foreground">
+              No menu items are currently available.
+            </p>
+          </Card>
+        ) : filteredMenuItems.length === 0 ? (
+          <Card className="p-8 text-center">
+            <p className="text-muted-foreground">
+              No menu items found in this category.
+            </p>
+          </Card>
+        ) : (
             <div className="grid md:grid-cols-2 gap-6">
-              {dbMenuItems.map((item) => {
+              {filteredMenuItems.map((item) => {
                 const isSelected =
                   selectedMenuItemIds.includes(item.id);
 
