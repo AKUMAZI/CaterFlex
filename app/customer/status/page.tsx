@@ -6,6 +6,7 @@ import { CustomerShell } from '@/app/customer/customer-shell';
 import { useAppState } from '@/lib/state';
 import { supabase } from '@/lib/supabase';
 import { getCustomerBookings } from '@/app/actions/booking-actions';
+import { OWNER_CONTACT } from '@/lib/constants';
 
 import {
   Card,
@@ -271,6 +272,11 @@ export default function CustomerStatusPage() {
                   </CardHeader>
 
                   <CardContent className="flex flex-col gap-5">
+                    {(statusKey === 'pending' || statusKey === 'confirmed') && (
+                      <p className="text-sm text-muted-foreground">
+                        Need to cancel or change this booking? Please contact the caterer at {OWNER_CONTACT}.
+                      </p>
+                    )}
                     <div>
                       <p className="mb-2 text-sm font-medium text-foreground">
                         Selected menu items

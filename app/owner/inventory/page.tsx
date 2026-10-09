@@ -25,6 +25,7 @@ import {
   getOverPurchasedIngredients,
   getScrapSuggestions,
 } from '@/lib/rules/macroFlex';
+import { getReservedIngredients } from '@/lib/macroflex';
 
 import type { Ingredient, MenuItem } from '@/lib/types';
 
@@ -186,6 +187,7 @@ function mapMenuItem(
 
 export default function InventoryPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [reservedIngredients, setReservedIngredients] = useState<Record<number, number>>({});
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -340,6 +342,10 @@ export default function InventoryPage() {
         );
 
         setIngredients(mappedIngredients);
+        const operatorId = Number((ingredientRows as DatabaseIngredient[])[0]?.OperatorID);
+        if (Number.isFinite(operatorId)) {
+          setReservedIngredients(await getReservedIngredients(operatorId));
+        }
         setMenuItems(mappedMenuItems);
         setUnavailableDishIds(new Set((menuItemRows ?? []).filter((item) => item.Availability === false).map((item) => String(item.MenuItemID))));
       } catch (error) {
@@ -1108,6 +1114,15 @@ export default function InventoryPage() {
                     </th>
 
                     <th className="text-left p-6 font-semibold text-card-foreground">
+                      Reserved
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">Confirmed orders</span>
+                    </th>
+
+                    <th className="text-left p-6 font-semibold text-card-foreground">
+                      Available
+                    </th>
+
+                    <th className="text-left p-6 font-semibold text-card-foreground">
                       Capacity
                     </th>
 
@@ -1137,6 +1152,8 @@ export default function InventoryPage() {
                             100
                           : 0;
 
+                      const reserved = reservedIngredients[Number(ingredient.id)] ?? 0;
+                      const available = ingredient.currentStock - reserved;
                       const isOver =
                         ingredient.currentStock >
                         ingredient.maxCapacity;
@@ -1231,6 +1248,17 @@ export default function InventoryPage() {
                                 </div>
                               )}
                             </td>
+
+                          {/* RESERVED */}
+                          <td className="p-6 text-muted-foreground">
+                            {reserved} {ingredient.unit}
+                          </td>
+
+                          {/* AVAILABLE */}
+                          <td className={`p-6 font-medium ${available < 0 ? 'text-red-600' : 'text-card-foreground'}`}>
+                            {available} {ingredient.unit}
+                            {available < 0 && <span className="mt-1 block text-xs">Short by {Math.abs(available)} {ingredient.unit}</span>}
+                          </td>
 
                           {/* CAPACITY */}
                           <td className="p-6 text-muted-foreground">

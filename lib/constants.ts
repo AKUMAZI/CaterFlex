@@ -1,0 +1,1 @@
+export const OWNER_CONTACT = 'PHONE_OR_EMAIL_HERE'

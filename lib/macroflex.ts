@@ -132,6 +132,56 @@ export async function checkOrderSufficiencyWithAllocations(items: { menuItemId: 
   return { sufficient: result.sufficient, hasNoIngredients: items.every((item) => !(recipes.get(Number(item.menuItemId))?.length)), shortfalls: result.shortfalls.map((shortfall) => ({ ...shortfall, contributingItems: shortfall.contributingItems.map((menuItemId) => ({ menuItemId, itemName: itemNames.get(menuItemId) ?? '' })) })) }
 }
 
+export interface ReservedIngredient { ingredientId: number; reserved: number }
+
+function manilaToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
+export async function getReservedIngredients(operatorId: number): Promise<Record<number, number>> {
+  const today = manilaToday()
+  const [{ data: ingredients, error: ingredientError }, { data: bookings, error: bookingError }, { data: orders, error: orderError }] = await Promise.all([
+    supabase.from('INGREDIENT').select('IngredientID').eq('OperatorID', operatorId),
+    supabase.from('BOOKING').select('BookingID, EventDate, GuestCount, BOOKING_ITEM(MenuItemID, Quantity)').eq('Status', 'confirmed').gte('EventDate', today),
+    supabase.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, MEAL_PREP_ITEM(MenuItemID, Quantity)').in('Status', ['active', 'confirmed']).gte('NextFulfillmentDate', today),
+  ])
+  if (ingredientError) throw ingredientError
+  if (bookingError) throw bookingError
+  if (orderError) throw orderError
+
+  const ingredientIds = new Set((ingredients ?? []).map((row) => Number(row.IngredientID)))
+  const bookingRows = (bookings ?? []) as unknown as BookingRow[]
+  const orderRows = (orders ?? []) as unknown as MealPrepRow[]
+  const menuItemIds = [...new Set([
+    ...bookingRows.flatMap((row) => (row.BOOKING_ITEM ?? []).map((item) => Number(item.MenuItemID))),
+    ...orderRows.flatMap((row) => (row.MEAL_PREP_ITEM ?? []).map((item) => Number(item.MenuItemID))),
+  ])]
+  if (!menuItemIds.length) return {}
+
+  const [{ data: recipes, error: recipeError }, { data: menuItems, error: menuError }] = await Promise.all([
+    supabase.from('DISH_INGREDIENT').select('MenuItemID, IngredientID, QuantityRequiredPerServing').in('MenuItemID', menuItemIds),
+    supabase.from('MENU_ITEM').select('MenuItemID, PrepTimeDays').in('MenuItemID', menuItemIds),
+  ])
+  if (recipeError) throw recipeError
+  if (menuError) throw menuError
+
+  const recipeMap = new Map<number, { ingredientId: number; qtyPerServing: number }[]>()
+  for (const row of (recipes ?? []) as Array<{ MenuItemID: number; IngredientID: number; QuantityRequiredPerServing: number }>) {
+    if (!ingredientIds.has(Number(row.IngredientID))) continue
+    const list = recipeMap.get(Number(row.MenuItemID)) ?? []
+    list.push({ ingredientId: Number(row.IngredientID), qtyPerServing: Number(row.QuantityRequiredPerServing ?? 0) })
+    recipeMap.set(Number(row.MenuItemID), list)
+  }
+  const prepDays = new Map((menuItems ?? []).map((row) => [Number(row.MenuItemID), Number(row.PrepTimeDays ?? 0)]))
+  const commitments: AllocationCommitment[] = []
+  for (const booking of bookingRows) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, booking.EventDate, (booking.BOOKING_ITEM ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: servingsForOrder('booking', booking.GuestCount) })), recipeMap, prepDays))
+  for (const order of orderRows) for (const date of expandRecurringDates(order.NextFulfillmentDate, order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: servingsForOrder('meal_prep', undefined, order.MealsPerCycle) })), recipeMap, prepDays))
+  return commitments.reduce<Record<number, number>>((reserved, commitment) => {
+    for (const [ingredientId, quantity] of Object.entries(commitment.ingredientQuantities)) reserved[Number(ingredientId)] = (reserved[Number(ingredientId)] ?? 0) + quantity
+    return reserved
+  }, {})
+}
+
 export async function checkOverPurchase(operatorId?: number): Promise<{ overPurchased: OverPurchasedIngredient[] }> {
   let query = supabase.from('INGREDIENT').select('IngredientName, UnitOfMeasure, CurrentStock, MaxStorageCapacity')
   if (operatorId !== undefined) query = query.eq('OperatorID', operatorId)
