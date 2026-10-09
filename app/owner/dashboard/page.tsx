@@ -119,7 +119,9 @@ export default function OwnerDashboard() {
                       {alert.message}
                     </p>
                     <p className="font-heading text-xs text-muted-foreground mt-1">
-                      {new Date(alert.timestamp).toLocaleDateString()}
+                      {new Intl.DateTimeFormat('en-US', {
+                        timeZone: 'UTC',
+                      }).format(new Date(alert.timestamp))}
                     </p>
                   </div>
                 </div>
