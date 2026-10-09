@@ -1,1 +1,1 @@
-export const OWNER_CONTACT = 'PHONE_OR_EMAIL_HERE'
+export const OWNER_CONTACT = 'raphaelandreiabad@gmail.com'
