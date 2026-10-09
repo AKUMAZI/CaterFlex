@@ -99,6 +99,9 @@ export default function ActiveOrdersPage() {
     if (result.ok) {
       await refreshMealPrepOrders();
       router.refresh();
+      window.alert('Meal prep order updated.');
+    } else {
+      window.alert(result.error);
     }
   };
 
@@ -112,6 +115,9 @@ export default function ActiveOrdersPage() {
       setExpandedId(null);
       await refreshMealPrepOrders();
       router.refresh();
+      window.alert('Meal prep order cancelled.');
+    } else {
+      window.alert(result.error);
     }
   };
 

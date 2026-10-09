@@ -41,7 +41,7 @@ async function loadCommitments(
   candidateMenuItemIds: number[],
 ): Promise<AllocationCommitment[]> {
   const bookingsQuery = client.from('BOOKING').select('BookingID, EventDate, GuestCount, BOOKING_ITEM(MenuItemID, Quantity)').eq('Status', 'confirmed')
-  const mealPrepQuery = client.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, MEAL_PREP_ITEM(MenuItemID, Quantity)').eq('Status', 'active').not('NextFulfillmentDate', 'is', null)
+  const mealPrepQuery = client.from('MEAL_PREP_ORDER').select('MealPrepOrderID, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, MEAL_PREP_ITEM(MenuItemID, Quantity)').in('Status', ['pending', 'confirmed', 'active']).not('NextFulfillmentDate', 'is', null)
   const [{ data: bookingData, error: bookingError }, { data: mealPrepData, error: mealPrepError }] = await Promise.all([bookingsQuery, mealPrepQuery])
   if (bookingError) throw bookingError
   if (mealPrepError) throw mealPrepError

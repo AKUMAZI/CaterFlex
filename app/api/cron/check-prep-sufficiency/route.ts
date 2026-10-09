@@ -61,8 +61,8 @@ export async function GET(request: NextRequest) {
   const { data: mealPrepOrders, error: mealPrepError } = await admin
     .from('MEAL_PREP_ORDER')
     .select('MealPrepOrderID, OperatorID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate')
-    // Paused and cancelled orders are intentionally excluded from prep checks and notifications.
-    .eq('Status', 'active')
+    // Only orders that can still be fulfilled are checked.
+    .in('Status', ['pending', 'confirmed', 'active'])
     .not('NextFulfillmentDate', 'is', null)
   if (mealPrepError) return NextResponse.json({ error: mealPrepError.message }, { status: 500 })
 

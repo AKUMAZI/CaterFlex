@@ -120,6 +120,12 @@ const statusConfig: Record<
     icon: XCircle,
   },
 
+  cancelled: {
+    label: 'Cancelled',
+    className: 'bg-muted text-muted-foreground',
+    icon: XCircle,
+  },
+
   completed: {
     label: 'Completed',
     className: 'bg-blue-100 text-blue-800',

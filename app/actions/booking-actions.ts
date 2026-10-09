@@ -368,7 +368,7 @@ export async function getOwnerPrepSchedule() {
   const operatorId = Number(owner.id)
   const [{ data: bookings, error: bookingError }, { data: mealPrepOrders, error: mealPrepError }] = await Promise.all([
     admin.from('BOOKING').select('BookingID, CustomerID, EventDate, EventTime, Venue, GuestCount, Status').eq('OperatorID', operatorId).eq('Status', 'confirmed'),
-    admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate, Status').eq('OperatorID', operatorId).eq('Status', 'active'),
+    admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, CustomerID, RecurrencePattern, MealsPerCycle, NextFulfillmentDate, Status').eq('OperatorID', operatorId).in('Status', ['pending', 'confirmed', 'active']),
   ])
 
   if (bookingError) return { ok: false as const, error: bookingError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [], customers: [], menuItems: [] }
@@ -532,7 +532,7 @@ export async function resumeMealPrepOrder(mealPrepOrderId: number) {
 }
 
 export async function cancelMealPrepOrder(mealPrepOrderId: number) {
-  return updateCustomerMealPrepStatus(mealPrepOrderId, ['active', 'paused'], 'cancelled')
+  return updateCustomerMealPrepStatus(mealPrepOrderId, ['pending', 'confirmed', 'active', 'paused'], 'cancelled')
 }
 
 export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStatus: 'active' | 'rejected') {
