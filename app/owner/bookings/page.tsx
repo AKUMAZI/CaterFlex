@@ -649,8 +649,12 @@ export default function BookingsPage() {
                           const StatusIcon =
                             status.icon;
 
-                          const draft = booking.OrderType === 'catering' ? (servingDrafts[booking.BookingID] ?? {}) : {};
-                          const totalCost = booking.OrderType === 'catering'
+  const draft = booking.OrderType === 'catering' ? (servingDrafts[booking.BookingID] ?? {}) : {};
+  const hasUnsavedServingEdits = booking.OrderType === 'catering' && booking.items.some((item) =>
+    item.bookingItemId !== undefined && draft[item.bookingItemId] !== undefined &&
+    Number(draft[item.bookingItemId]) !== Number(item.quantity)
+  );
+  const totalCost = booking.OrderType === 'catering'
                             ? computeBookingTotal(booking.items.map((item) => ({ menuItemId: item.bookingItemId ?? 0, quantity: Number(draft[item.bookingItemId ?? 0] ?? item.quantity) })), new Map(booking.items.map((item) => [item.bookingItemId ?? 0, item.price])))
                             : booking.items.reduce((total, item) => total + item.price * item.quantity, 0);
 
@@ -889,24 +893,24 @@ export default function BookingsPage() {
 
                                       {/* CONFIRM */}
 
-                                      <Button
-onClick={() =>
-                                  booking.OrderType === 'meal_prep'
-                                    ? updateMealPrepOrderStatus(
-                                        booking.mealPrepOrderId!,
-                                        'active'
-                                      )
-                                    : updateBookingStatus(
-                                        booking.BookingID,
-                                        'confirmed'
-                                      )
-                                }
-                                        disabled={
-                                          updatingId ===
-                                          booking.BookingID
-                                        }
-                                        className="flex-1 bg-green-600 text-white gap-2 hover:bg-brand"
-                                      >
+                                      <div className="flex-1">
+                                        <Button
+  onClick={() =>
+                                    booking.OrderType === 'meal_prep'
+                                      ? updateMealPrepOrderStatus(
+                                          booking.mealPrepOrderId!,
+                                          'active'
+                                        )
+                                      : updateBookingStatus(
+                                          booking.BookingID,
+                                          'confirmed'
+                                        )
+                                  }
+                                          disabled={
+                                            updatingId === booking.BookingID || hasUnsavedServingEdits
+                                          }
+                                          className="w-full bg-green-600 text-white gap-2 hover:bg-brand"
+                                        >
                                         <Check className="w-4 h-4" />
 
 {updatingId ===
@@ -915,7 +919,11 @@ onClick={() =>
                                   : booking.OrderType === 'meal_prep'
                                     ? 'Confirm Order'
                                     : 'Confirm Booking'}
-                                      </Button>
+                                        </Button>
+                                        {hasUnsavedServingEdits && (
+                                          <p className="mt-1 text-xs text-muted-foreground">Save servings before confirming</p>
+                                        )}
+                                      </div>
 
                                       {/* REJECT */}
 

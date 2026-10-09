@@ -55,6 +55,26 @@ describe('preparation actions', () => {
     expect(rpc).toHaveBeenCalledWith('mark_prepared', expect.objectContaining({ p_operator_id: 7, p_usage: [{ ingredientId: 9, quantity: 8 }] }))
   })
 
+  it('uses each booking item serving quantity when marking prepared', async () => {
+    const order = createQuery({ data: { BookingID: 10, OperatorID: 7, GuestCount: 196, Status: 'confirmed', EventDate: '2026-10-10' }, error: null })
+    const items = createQuery({ data: [{ MenuItemID: 3, Quantity: 65 }, { MenuItemID: 4, Quantity: 66 }], error: null })
+    const recipes = createQuery({ data: [
+      { MenuItemID: 3, IngredientID: 9, QuantityRequiredPerServing: 0.2 },
+      { MenuItemID: 4, IngredientID: 10, QuantityRequiredPerServing: 0.2 },
+    ], error: null })
+    const rpc = vi.fn(async () => ({ data: 1, error: null }))
+    createAdminClient.mockReturnValue({ from: vi.fn((table: string) => table === 'BOOKING' ? order : table === 'BOOKING_ITEM' ? items : recipes), rpc })
+    const { markBookingPrepared } = await import('./preparation-actions')
+
+    await expect(markBookingPrepared(10)).resolves.toEqual({ ok: true })
+    expect(rpc).toHaveBeenCalledWith('mark_prepared', expect.objectContaining({
+      p_usage: [
+        { ingredientId: 9, quantity: expect.closeTo(13, 8) },
+        { ingredientId: 10, quantity: expect.closeTo(13.2, 8) },
+      ],
+    }))
+  })
+
   it('returns already-prepared rpc errors cleanly', async () => {
     const order = createQuery({ data: { BookingID: 10, OperatorID: 7, GuestCount: 1, Status: 'confirmed', EventDate: '2026-10-10' }, error: null })
     const empty = createQuery({ data: [], error: null })

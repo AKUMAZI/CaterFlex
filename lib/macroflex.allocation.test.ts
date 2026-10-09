@@ -15,11 +15,11 @@ const recipes: Row[] = [
   { MenuItemID: 21, IngredientID: 39, QuantityRequiredPerServing: 2, INGREDIENT: { IngredientID: 39, IngredientName: 'Rice', UnitOfMeasure: 'kg', CurrentStock: 10 } },
 ]
 
-function fakeClient(extraMealPrep: Row[] = [], includeBooking = true) {
+function fakeClient(extraMealPrep: Row[] = [], includeBooking = true, bookingQuantity: number | null = 3) {
   const tables: Record<string, Row[]> = {
     MENU_ITEM: menus,
     DISH_INGREDIENT: recipes,
-    BOOKING: includeBooking ? [{ BookingID: 38, EventDate: '2026-10-24', GuestCount: 4, Status: 'confirmed', BOOKING_ITEM: [{ MenuItemID: 21, Quantity: 4 }] }] : [],
+    BOOKING: includeBooking ? [{ BookingID: 38, EventDate: '2026-10-24', GuestCount: 4, Status: 'confirmed', BOOKING_ITEM: [{ MenuItemID: 21, Quantity: bookingQuantity }] }] : [],
     MEAL_PREP_ORDER: extraMealPrep,
   }
   return {
@@ -42,13 +42,18 @@ describe('macroflex allocation regressions', () => {
   it('loads recipes for dishes in other confirmed bookings', async () => {
     const result = await checkSufficiencyWithAllocations(20, 5, '2026-10-24', '2026-10-24', undefined, fakeClient())
     expect(result.sufficient).toBe(false)
-    expect(result.shortfalls[0]).toMatchObject({ ingredientName: 'Rice', allocated: 8, available: 2, shortBy: 3 })
+    expect(result.shortfalls[0]).toMatchObject({ ingredientName: 'Rice', allocated: 6, available: 4, shortBy: 1 })
+  })
+
+  it('uses guest count when a booking item quantity is null', async () => {
+    const result = await checkSufficiencyWithAllocations(20, 5, '2026-10-24', '2026-10-24', undefined, fakeClient([], true, null))
+    expect(result.shortfalls[0]).toMatchObject({ allocated: 8, available: 2, shortBy: 3 })
   })
 
   it('applies the same commitment allocation to order checks and exclusions', async () => {
     const client = fakeClient()
     const result = await checkOrderSufficiencyWithAllocations([{ menuItemId: 20 }], 5, '2026-10-24', undefined, client)
-    expect(result.shortfalls[0]).toMatchObject({ allocated: 8, available: 2, shortBy: 3 })
+    expect(result.shortfalls[0]).toMatchObject({ allocated: 6, available: 4, shortBy: 1 })
     await expect(checkSufficiencyWithAllocations(20, 5, '2026-10-24', '2026-10-24', { type: 'booking', id: 38 }, fakeClient())).resolves.toMatchObject({ sufficient: true })
     await expect(checkSufficiencyWithAllocations(20, 5, '2026-10-31', '2026-10-31', undefined, fakeClient())).resolves.toMatchObject({ sufficient: true })
   })
