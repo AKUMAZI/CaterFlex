@@ -1,5 +1,11 @@
 export type CommitmentRef = { type: 'booking' | 'meal_prep'; id: number }
 
+export function roundQuantity(value: number, decimals = 3): number {
+  if (!Number.isFinite(value)) return 0
+  const factor = 10 ** decimals
+  return Math.round(value * factor) / factor
+}
+
 export interface AllocationCommitment {
   ref: CommitmentRef
   prepStartDate: string
@@ -59,7 +65,7 @@ export function computeOrderShortfalls(
     const allocated = calculateAllocatedQuantity(ingredientId, window, commitments, excludeRef)
     const available = Math.max(0, stock.currentStock - allocated)
     return available < demand.required
-      ? [{ ingredientName: stock.name, required: demand.required, available, shortBy: demand.required - available, unitOfMeasure: stock.unit, allocated, contributingItems: demand.contributingItems }]
+      ? [{ ingredientName: stock.name, required: roundQuantity(demand.required), available: roundQuantity(available), shortBy: roundQuantity(demand.required - available), unitOfMeasure: stock.unit, allocated: roundQuantity(allocated), contributingItems: demand.contributingItems }]
       : []
   })
   return { sufficient: shortfalls.length === 0, shortfalls }
@@ -94,7 +100,7 @@ export function computeAllocationShortfalls(
     const required = requirement.requiredPerServing * quantity
     const available = Math.max(0, requirement.currentStock - allocated)
     return available < required
-      ? [{ ingredientName: requirement.name, required, available, shortBy: required - available, unitOfMeasure: requirement.unit, allocated }]
+      ? [{ ingredientName: requirement.name, required: roundQuantity(required), available: roundQuantity(available), shortBy: roundQuantity(required - available), unitOfMeasure: requirement.unit, allocated: roundQuantity(allocated) }]
       : []
   })
   return { sufficient: shortfalls.length === 0, shortfalls }

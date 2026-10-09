@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, computeOrderIngredientUsage, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, servingsForOrder } from './allocation'
+import { addDays, buildCommitment, calculateAllocatedQuantity, computeAllocationShortfalls, computeOrderIngredientUsage, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, roundQuantity, servingsForOrder } from './allocation'
 
 describe('allocation rules', () => {
   const recipes = new Map([[1, [{ ingredientId: 7, qtyPerServing: 2 }]], [2, [{ ingredientId: 7, qtyPerServing: 3 }]]])
   const prepDays = new Map([[1, 2], [2, 5]])
+  it('rounds quantity display values and handles non-finite inputs', () => {
+    expect(roundQuantity(117.60000000000001)).toBe(117.6)
+    expect(roundQuantity(0.1 + 0.2)).toBe(0.3)
+    expect(roundQuantity(Number.NaN)).toBe(0)
+    expect(roundQuantity(Number.POSITIVE_INFINITY)).toBe(0)
+  })
+  it('reports decimal allocation shortfalls exactly', () => {
+    const result = computeAllocationShortfalls(
+      [{ ingredientId: 7, name: 'Rice', unit: 'kg', requiredPerServing: 0.196, currentStock: 0 }],
+      600,
+      { prepStartDate: '2026-10-10', fulfillmentDate: '2026-10-10' },
+      [],
+    )
+    expect(result.shortfalls[0]).toMatchObject({ required: 117.6, available: 0, shortBy: 117.6, allocated: 0 })
+  })
   it('sums shared ingredient usage and matches commitment totals', () => {
     const usage = computeOrderIngredientUsage([{ menuItemId: 1 }, { menuItemId: 2 }], 2, recipes)
     const commitment = buildCommitment({ type: 'booking', id: 1 }, '2026-10-10', [{ menuItemId: 1, servings: 2 }, { menuItemId: 2, servings: 2 }], recipes, prepDays)

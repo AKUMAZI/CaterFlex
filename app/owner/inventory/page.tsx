@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
+import { roundQuantity } from '@/lib/rules/allocation';
 
 import {
   checkDishStock,
@@ -1113,7 +1114,7 @@ export default function InventoryPage() {
 
                     <th className="text-left p-6 font-semibold text-card-foreground">
                       Reserved
-                      <span className="mt-1 block text-xs font-normal text-muted-foreground">Confirmed orders</span>
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">All upcoming confirmed orders</span>
                     </th>
 
                     <th className="text-left p-6 font-semibold text-card-foreground">
@@ -1249,13 +1250,13 @@ export default function InventoryPage() {
 
                           {/* RESERVED */}
                           <td className="p-6 text-muted-foreground">
-                            {reserved} {ingredient.unit}
+                            {roundQuantity(reserved)} {ingredient.unit}
                           </td>
 
                           {/* AVAILABLE */}
                           <td className={`p-6 font-medium ${available < 0 ? 'text-red-600' : 'text-card-foreground'}`}>
-                            {available} {ingredient.unit}
-                            {available < 0 && <span className="mt-1 block text-xs">Short by {Math.abs(available)} {ingredient.unit}</span>}
+                            {roundQuantity(available)} {ingredient.unit}
+                            {available < 0 && <span className="mt-1 block text-xs">Short by {roundQuantity(Math.abs(available))} {ingredient.unit}</span>}
                           </td>
 
                           {/* CAPACITY */}

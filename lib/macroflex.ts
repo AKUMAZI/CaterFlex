@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-  import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+  import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, roundQuantity, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface IngredientShortfall { ingredientName: string; required: number; available: number; shortBy: number; unitOfMeasure: string; allocated?: number }
@@ -186,8 +186,8 @@ export async function getReservedIngredients(operatorId: number, client: Supabas
   for (const booking of bookingRows) commitments.push(buildCommitment({ type: 'booking', id: Number(booking.BookingID) }, booking.EventDate, (booking.BOOKING_ITEM ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: servingsForOrder('booking', booking.GuestCount) })), recipeMap, prepDays))
   for (const order of orderRows) for (const date of expandRecurringDates(order.NextFulfillmentDate, order.RecurrencePattern)) commitments.push(buildCommitment({ type: 'meal_prep', id: Number(order.MealPrepOrderID) }, date, (order.MEAL_PREP_ITEM ?? []).map((item) => ({ menuItemId: Number(item.MenuItemID), servings: servingsForOrder('meal_prep', undefined, order.MealsPerCycle) })), recipeMap, prepDays))
   return excludePrepared(commitments, preparedBookingIds, preparedMealPrepCycles).reduce<Record<number, number>>((reserved, commitment) => {
-    for (const [ingredientId, quantity] of Object.entries(commitment.ingredientQuantities)) reserved[Number(ingredientId)] = (reserved[Number(ingredientId)] ?? 0) + quantity
-    return reserved
+  for (const [ingredientId, quantity] of Object.entries(commitment.ingredientQuantities)) reserved[Number(ingredientId)] = roundQuantity((reserved[Number(ingredientId)] ?? 0) + quantity)
+  return reserved
   }, {})
 }
 
