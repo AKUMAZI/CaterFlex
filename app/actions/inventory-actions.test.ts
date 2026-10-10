@@ -4,7 +4,7 @@ vi.mock('@/app/actions/auth', () => ({ requireRole: vi.fn() }))
 vi.mock('@/lib/supabase-admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/macroflex', () => ({ getReservedIngredients: vi.fn() }))
 
-import { validateInventoryQuantity } from './inventory-actions'
+import { validateInventoryQuantity } from '../../lib/rules/quantity-validation'
 
 describe('inventory quantity validation', () => {
   it('accepts zero and positive integers', () => {

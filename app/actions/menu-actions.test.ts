@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/app/actions/auth', () => ({ requireRole: vi.fn() }))
 vi.mock('@/lib/supabase-admin', () => ({ createAdminClient: vi.fn() }))
 
-import { validatePerServingQuantity } from './menu-actions'
+import { validatePerServingQuantity } from '../../lib/rules/quantity-validation'
 
 describe('per-serving quantity validation', () => {
   it('accepts positive integers', () => {

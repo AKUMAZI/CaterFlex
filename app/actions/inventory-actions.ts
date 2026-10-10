@@ -3,12 +3,7 @@
 import { requireRole } from '@/app/actions/auth';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getReservedIngredients } from '@/lib/macroflex';
-
-export function validateInventoryQuantity(quantity: number) {
-  return Number.isInteger(quantity) && quantity >= 0
-    ? null
-    : 'Stock and storage capacity must be whole numbers greater than or equal to 0.';
-}
+import { validateInventoryQuantity } from '@/lib/rules/quantity-validation';
 
 export async function createIngredient(input: {
   name: string;

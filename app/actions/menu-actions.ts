@@ -2,6 +2,7 @@
 
 import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { validatePerServingQuantity } from '@/lib/rules/quantity-validation'
 
 type MenuItemUpdate = {
   ItemName: string
@@ -13,13 +14,6 @@ type MenuItemUpdate = {
 }
 
 type MenuItemCreate = MenuItemUpdate
-
-export function validatePerServingQuantity(value: number): string | null {
-  if (!Number.isInteger(value) || value < 1) {
-    return 'Per-serving quantity must be a whole number greater than or equal to 1.'
-  }
-  return null
-}
 
 export async function createMenuItem(values: MenuItemCreate) {
   const user = await requireRole('owner')
