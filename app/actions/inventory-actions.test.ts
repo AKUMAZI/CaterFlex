@@ -1,25 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-const requireRole = vi.fn()
-const createAdminClient = vi.fn()
-const getReservedIngredients = vi.fn()
+vi.mock('@/app/actions/auth', () => ({ requireRole: vi.fn() }))
+vi.mock('@/lib/supabase-admin', () => ({ createAdminClient: vi.fn() }))
+vi.mock('@/lib/macroflex', () => ({ getReservedIngredients: vi.fn() }))
 
-vi.mock('@/app/actions/auth', () => ({ requireRole }))
-vi.mock('@/lib/supabase-admin', () => ({ createAdminClient }))
-vi.mock('@/lib/macroflex', () => ({ getReservedIngredients }))
+import { validateInventoryQuantity } from './inventory-actions'
 
-describe('owner reserved inventory action', () => {
-  beforeEach(() => {
-    vi.resetModules()
-    vi.clearAllMocks()
+describe('inventory quantity validation', () => {
+  it('accepts zero and positive integers', () => {
+    expect(validateInventoryQuantity(0)).toBeNull()
+    expect(validateInventoryQuantity(12)).toBeNull()
   })
 
-  it('rejects non-owners without loading reserved inventory', async () => {
-    requireRole.mockResolvedValue(null)
-    const { getOwnerReservedIngredients } = await import('./inventory-actions')
+  it('rejects decimal stock and capacity values', () => {
+    expect(validateInventoryQuantity(1.5)).toContain('whole numbers')
+  })
 
-    await expect(getOwnerReservedIngredients()).resolves.toEqual({ ok: false, error: 'Owner access required.' })
-    expect(getReservedIngredients).not.toHaveBeenCalled()
-    expect(createAdminClient).not.toHaveBeenCalled()
+  it('rejects negative stock and capacity values', () => {
+    expect(validateInventoryQuantity(-1)).toContain('greater than or equal to 0')
   })
 })

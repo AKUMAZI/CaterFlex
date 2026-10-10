@@ -507,12 +507,9 @@ export function MenuItemForm({
       return;
     }
 
-    if (
-      !quantity ||
-      quantity <= 0
-    ) {
+    if (!Number.isInteger(quantity) || quantity < 1) {
       setErrorMessage(
-        'Please enter a quantity greater than 0.'
+        'Please enter a whole-number quantity greater than or equal to 1.'
       );
       return;
     }
@@ -1269,10 +1266,10 @@ export function MenuItemForm({
 
                   <input
                     type="number"
-                    min={0}
-                    step="0.1"
-                    value={
-                      ingredientQty
+  min={1}
+  step={1}
+  value={
+  ingredientQty
                     }
                     onChange={(e) =>
                       setIngredientQty(

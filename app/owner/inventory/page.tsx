@@ -509,8 +509,8 @@ export default function InventoryPage() {
   const handleIngredientSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const quantity = Number(formQuantity);
-  if (!formName.trim() || !formUnit.trim() || !Number.isFinite(quantity) || quantity < 0) {
-  alert('Enter a valid ingredient name, quantity, and measurement.');
+  if (!formName.trim() || !formUnit.trim() || !Number.isInteger(quantity) || quantity < 0) {
+  alert('Enter a whole-number quantity greater than or equal to 0, plus a name and measurement.');
       return;
     }
 
@@ -550,8 +550,8 @@ export default function InventoryPage() {
   const handleSave = async (id: string) => {
     const newStock = Number(editValue);
   
-    if (!Number.isFinite(newStock) || newStock < 0) {
-      alert('Please enter a valid stock amount.');
+    if (!Number.isInteger(newStock) || newStock < 0) {
+      alert('Please enter a whole-number stock amount greater than or equal to 0.');
       return;
     }
   
@@ -1061,7 +1061,7 @@ export default function InventoryPage() {
   <div className="grid grid-cols-2 gap-4">
   <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
   Quantity
-  <input type="number" min="0" step="0.01" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
+  <input type="number" min="0" step="1" value={formQuantity} onChange={(event) => setFormQuantity(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#b85c38] focus:ring-2 focus:ring-[#b85c38]/20" required />
   </label>
   <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
   Measurement unit
@@ -1197,7 +1197,7 @@ export default function InventoryPage() {
                                   <input
                                     type="number"
                                     min="0"
-                                    step="0.01"
+                                    step="1"
                                     value={editValue}
                                     onChange={(e) => setEditValue(e.target.value)}
                                     className="w-28 px-2 py-1 border border-border rounded"

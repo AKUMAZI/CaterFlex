@@ -4,6 +4,12 @@ import { requireRole } from '@/app/actions/auth';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getReservedIngredients } from '@/lib/macroflex';
 
+export function validateInventoryQuantity(quantity: number) {
+  return Number.isInteger(quantity) && quantity >= 0
+    ? null
+    : 'Stock and storage capacity must be whole numbers greater than or equal to 0.';
+}
+
 export async function createIngredient(input: {
   name: string;
   quantity: number;
@@ -17,8 +23,9 @@ export async function createIngredient(input: {
   }
 
   const name = input.name.trim();
-  if (!name || !Number.isFinite(input.quantity) || input.quantity < 0) {
-    return { ok: false as const, error: 'Enter a valid ingredient name and quantity.' };
+  const quantityError = validateInventoryQuantity(input.quantity);
+  if (!name || quantityError) {
+    return { ok: false as const, error: quantityError ?? 'Enter a valid ingredient name and quantity.' };
   }
 
   const admin = createAdminClient();
@@ -136,12 +143,11 @@ export async function updateIngredientStock(
 
   if (
     !Number.isFinite(ingredientId) ||
-    !Number.isFinite(newStock) ||
-    newStock < 0
+    validateInventoryQuantity(newStock)
   ) {
     return {
       ok: false as const,
-      error: 'Invalid ingredient or stock value.',
+      error: validateInventoryQuantity(newStock) ?? 'Invalid ingredient or stock value.',
     };
   }
 
