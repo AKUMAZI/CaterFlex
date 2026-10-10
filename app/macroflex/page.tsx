@@ -28,6 +28,7 @@ import type {
   ScrapSuggestion,
   SufficiencyCheckResult,
 } from '@/lib/macroflex'
+import { formatQuantity } from '@/lib/rules/quantity-format'
 
 interface MenuItemWithStatus {
   menuItemId: number
@@ -37,12 +38,6 @@ interface MenuItemWithStatus {
   status: 'available' | 'insufficient'
   shortfalls: IngredientShortfall[]
   suggestions: ScrapSuggestion[]
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-PH', {
-    maximumFractionDigits: 2,
-  }).format(value)
 }
 
 function formatPrice(value: number) {
@@ -506,29 +501,14 @@ export default function MacroFlexPage() {
 
                                             <p className="mt-1 text-xs text-destructive/80">
                                               Required:{' '}
-                                              {formatNumber(
-                                                shortfall.required
-                                              )}{' '}
-                                              {
-                                                shortfall.unitOfMeasure
-                                              }
+                                              {formatQuantity(shortfall.required, shortfall.unitOfMeasure)}
                                               {' | '}
                                               Available:{' '}
-                                              {formatNumber(
-                                                shortfall.available
-                                              )}{' '}
-                                              {
-                                                shortfall.unitOfMeasure
-                                              }
+                                              {formatQuantity(shortfall.available, shortfall.unitOfMeasure)}
                                               {' | '}
                                               Short by:{' '}
                                               <span className="font-semibold">
-                                                {formatNumber(
-                                                  shortfall.shortBy
-                                                )}{' '}
-                                                {
-                                                  shortfall.unitOfMeasure
-                                                }
+                                                {formatQuantity(shortfall.shortBy, shortfall.unitOfMeasure)}
                                               </span>
                                             </p>
                                           </div>
@@ -642,19 +622,9 @@ export default function MacroFlexPage() {
 
                               <p className="text-sm text-amber-800">
                                 Current:{' '}
-                                {formatNumber(
-                                  ingredient.currentStock
-                                )}{' '}
-                                {
-                                  ingredient.unitOfMeasure
-                                }{' '}
+                                {formatQuantity(ingredient.currentStock, ingredient.unitOfMeasure)}{' '}
                                 | Capacity:{' '}
-                                {formatNumber(
-                                  ingredient.maxCapacity
-                                )}{' '}
-                                {
-                                  ingredient.unitOfMeasure
-                                }
+                                {formatQuantity(ingredient.maxCapacity, ingredient.unitOfMeasure)}
                               </p>
                             </div>
 
@@ -663,10 +633,7 @@ export default function MacroFlexPage() {
                               className="whitespace-nowrap"
                             >
                               +
-                              {formatNumber(
-                                ingredient.exceededBy
-                              )}{' '}
-                              over
+                              {formatQuantity(ingredient.exceededBy, ingredient.unitOfMeasure)} over
                             </Badge>
 
                           </div>

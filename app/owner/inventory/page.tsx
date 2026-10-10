@@ -1,6 +1,7 @@
 'use client';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
+import { formatQuantity } from '@/lib/rules/quantity-format';
 import {
   createIngredient,
   updateIngredient,
@@ -1250,13 +1251,13 @@ export default function InventoryPage() {
 
                           {/* RESERVED */}
                           <td className="p-6 text-muted-foreground">
-                            {roundQuantity(reserved)} {ingredient.unit}
+                            {formatQuantity(reserved, ingredient.unit)}
                           </td>
 
                           {/* AVAILABLE */}
                           <td className={`p-6 font-medium ${available < 0 ? 'text-red-600' : 'text-card-foreground'}`}>
-                            {roundQuantity(available)} {ingredient.unit}
-                            {available < 0 && <span className="mt-1 block text-xs">Short by {roundQuantity(Math.abs(available))} {ingredient.unit}</span>}
+                            {formatQuantity(available, ingredient.unit)}
+                            {available < 0 && <span className="mt-1 block text-xs">Short by {formatQuantity(Math.abs(available), ingredient.unit)}</span>}
                           </td>
 
                           {/* CAPACITY */}

@@ -9,6 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { MenuItemForm } from '@/components/owner/MenuItemForm'
 import { supabase } from '@/lib/supabase'
 import type { MenuItem as FormMenuItem } from '@/lib/types'
+import { formatQuantity } from '@/lib/rules/quantity-format'
+
+function formatNumber(value: number) {
+  return formatQuantity(value, 'g').replace(/ g$/, '')
+}
 
 type MenuItem = {
   MenuItemID: number
@@ -38,10 +43,6 @@ type DishIngredient = {
 type IngredientRow = DishIngredient & Ingredient
 
 type MenuStatus = 'available' | 'insufficient' | 'unavailable'
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)
-}
 
 function formatPrice(value: number) {
   return new Intl.NumberFormat('en-PH', {

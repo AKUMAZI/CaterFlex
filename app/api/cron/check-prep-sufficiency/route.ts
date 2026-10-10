@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 import { checkOrderSufficiencyWithAllocations } from '@/lib/macroflex'
 import { createNotification, hasNotificationForToday } from '@/lib/notifications'
 import { addDays, orderPrepWindow, servingsForBookingItem, servingsForOrder } from '@/lib/rules/allocation'
+import { formatQuantity } from '@/lib/rules/quantity-format'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
     if (await hasNotificationForToday(Number(booking.OperatorID), type, metadata)) continue
     const message = result.sufficient
       ? 'Preparation can start for this booking.'
-      : `Insufficient ingredients: ${result.shortfalls.map((shortfall) => `${shortfall.ingredientName} short by ${shortfall.shortBy} ${shortfall.unitOfMeasure} (${shortfall.contributingItems.map((item) => item.itemName).join(', ')})`).join(', ')}.`
+      : `Insufficient ingredients: ${result.shortfalls.map((shortfall) => `${shortfall.ingredientName} short by ${formatQuantity(shortfall.shortBy, shortfall.unitOfMeasure)} (${shortfall.contributingItems.map((item) => item.itemName).join(', ')})`).join(', ')}.`
     if (await createNotification(Number(booking.OperatorID), type, message, metadata)) notified += 1
   }
 
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
       if (!(await hasNotificationForToday(Number(order.OperatorID), type, metadata))) {
         const message = result.sufficient
           ? `Preparation can start for meal prep order ${order.MealPrepOrderID}.`
-          : `Insufficient ingredients for meal prep order ${order.MealPrepOrderID}: ${result.shortfalls.map((shortfall) => `${shortfall.ingredientName} short by ${shortfall.shortBy} ${shortfall.unitOfMeasure} (${shortfall.contributingItems.map((item) => item.itemName).join(', ')})`).join(', ')}.`
+          : `Insufficient ingredients for meal prep order ${order.MealPrepOrderID}: ${result.shortfalls.map((shortfall) => `${shortfall.ingredientName} short by ${formatQuantity(shortfall.shortBy, shortfall.unitOfMeasure)} (${shortfall.contributingItems.map((item) => item.itemName).join(', ')})`).join(', ')}.`
         if (await createNotification(Number(order.OperatorID), type, message, metadata)) mealPrepNotified += 1
       }
     }
