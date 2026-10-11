@@ -11,8 +11,8 @@ import { checkAllergenConflict } from './rules/allergenFiltering';
 import {
   checkDishStock,
   getOverPurchasedIngredients,
-  getScrapSuggestions,
 } from './rules/macroFlex';
+import { getScrapSuggestions } from './rules/scrapSuggestions';
 
 export function buildAlerts(state: {
   bookings: Booking[];
@@ -107,13 +107,22 @@ export function buildAlerts(state: {
     }
   });
 
-  getScrapSuggestions(state.ingredients, state.menuItems).slice(0, 5).forEach((s) => {
+  getScrapSuggestions(
+    '',
+    state.menuItems,
+    state.ingredients.map((ingredient) => ({
+      id: ingredient.id,
+      name: ingredient.name,
+      currentStock: ingredient.currentStock,
+      unit: ingredient.unit,
+    })),
+  ).slice(0, 5).forEach((suggestion) => {
     alerts.push({
-      id: `alert-scrap-${s.dishId}-${s.leftoverIngredientId}`,
+      id: `alert-scrap-${suggestion.dishId}`,
       type: 'scrapSuggestion',
       severity: 'info',
-      message: `Tira-tira: use leftover ${s.leftoverIngredientName} (${s.leftoverQty}${s.unit}) to make ${s.dishName}`,
-      relatedItemId: s.dishId,
+      message: `Use available stock to make ${suggestion.dishName}: ${suggestion.usesLeftover.map((item) => `${item.quantity}${item.unit} ${item.ingredientName}`).join(', ')}`,
+      relatedItemId: suggestion.dishId,
       timestamp: now,
     });
   });

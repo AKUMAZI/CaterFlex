@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
-  import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, roundQuantity, servingsForBookingItem, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, roundQuantity, servingsForBookingItem, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
+import { getScrapSuggestions as getPureScrapSuggestions, type ScrapSuggestion as PureScrapSuggestion } from './rules/scrapSuggestions'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface IngredientShortfall { ingredientName: string; required: number; available: number; shortBy: number; unitOfMeasure: string; allocated?: number }
@@ -199,21 +200,40 @@ export async function checkOverPurchase(operatorId?: number): Promise<{ overPurc
   return { overPurchased: (data ?? []).filter((i) => Number(i.CurrentStock ?? 0) > Number(i.MaxStorageCapacity)).map((i) => ({ ingredientName: i.IngredientName, currentStock: Number(i.CurrentStock ?? 0), maxCapacity: Number(i.MaxStorageCapacity), exceededBy: Number(i.CurrentStock ?? 0) - Number(i.MaxStorageCapacity), unitOfMeasure: i.UnitOfMeasure })) }
 }
 
-export async function getScrapBasedSuggestions(failedMenuItemId: number): Promise<ScrapSuggestionResult> {
-  const { data: failed, error: failedError } = await getMenuIngredients(failedMenuItemId)
-  if (failedError) throw failedError
-  const leftovers = new Map<number, { name: string; quantity: number; unit: string }>()
-  for (const row of (failed ?? []) as unknown as IngredientRow[]) {
+export async function getScrapBasedSuggestions(failedMenuItemId: number, operatorId?: number, client: SupabaseClient = supabase): Promise<ScrapSuggestionResult> {
+  const { data: menuData, error: menuError } = await client.from('MENU_ITEM').select('MenuItemID, ItemName, Availability, DISH_INGREDIENT(IngredientID, QuantityRequiredPerServing, INGREDIENT:INGREDIENT(IngredientID, IngredientName, UnitOfMeasure, CurrentStock, OperatorID))')
+  if (menuError) throw menuError
+  const rows = (menuData ?? []) as unknown as Array<{
+    MenuItemID: number
+    ItemName: string
+    Availability: boolean | null
+    DISH_INGREDIENT?: Array<{ IngredientID: number; QuantityRequiredPerServing: number; INGREDIENT?: Ingredient | Ingredient[] & { OperatorID?: number }}>
+  }>
+  const operator = operatorId ?? rows.flatMap((row) => row.DISH_INGREDIENT ?? []).map((row) => {
     const ingredient = Array.isArray(row.INGREDIENT) ? row.INGREDIENT[0] : row.INGREDIENT
-    const required = Number(row.QuantityRequiredPerServing ?? 0); const stock = Number(ingredient?.CurrentStock ?? 0)
-    if (ingredient && stock > 0 && stock < required) leftovers.set(Number(ingredient.IngredientID), { name: ingredient.IngredientName, quantity: stock, unit: ingredient.UnitOfMeasure })
-  }
-  if (!leftovers.size) return { alternatives: [] }
-  const { data: items, error } = await supabase.from('MENU_ITEM').select('MenuItemID, ItemName, Category, Price, DISH_INGREDIENT(IngredientID, QuantityRequiredPerServing, INGREDIENT:INGREDIENT(IngredientID, IngredientName, UnitOfMeasure))').neq('MenuItemID', failedMenuItemId)
-  if (error) throw error
-  const alternatives = (items ?? []).filter((item) => item.DISH_INGREDIENT?.length > 0 && item.DISH_INGREDIENT.every((r) => leftovers.has(Number(r.IngredientID)) && leftovers.get(Number(r.IngredientID))!.quantity >= Number(r.QuantityRequiredPerServing ?? 0))).map((item) => ({ menuItemId: Number(item.MenuItemID), itemName: item.ItemName, category: item.Category, price: Number(item.Price), usesLeftover: item.DISH_INGREDIENT.map((r) => ({ ingredientName: leftovers.get(Number(r.IngredientID))!.name, quantity: Number(r.QuantityRequiredPerServing ?? 0), unitOfMeasure: leftovers.get(Number(r.IngredientID))!.unit })) }))
-  return { alternatives }
+    return (ingredient as (Ingredient & { OperatorID?: number }) | undefined)?.OperatorID
+  }).find((id): id is number => id != null)
+  const ingredients = [...new Map(rows.flatMap((row) => (row.DISH_INGREDIENT ?? []).map((entry) => {
+    const ingredient = Array.isArray(entry.INGREDIENT) ? entry.INGREDIENT[0] : entry.INGREDIENT
+    return ingredient ? [Number(ingredient.IngredientID), { id: String(ingredient.IngredientID), name: ingredient.IngredientName, currentStock: Number(ingredient.CurrentStock ?? 0), unit: ingredient.UnitOfMeasure }] as const : null
+  }).filter((entry): entry is readonly [number, { id: string; name: string; currentStock: number; unit: string }] => entry !== null))).values()]
+  const reserved = operator == null ? {} : await getReservedIngredients(operator, client)
+  const suggestions = getPureScrapSuggestions(
+    String(failedMenuItemId),
+    rows.map((row) => ({
+      id: String(row.MenuItemID),
+      name: row.ItemName,
+      availability: row.Availability ?? true,
+      requiredIngredients: (row.DISH_INGREDIENT ?? []).map((entry) => {
+        const ingredient = Array.isArray(entry.INGREDIENT) ? entry.INGREDIENT[0] : entry.INGREDIENT
+        return { id: String(entry.IngredientID), name: ingredient?.IngredientName ?? '', qty: Number(entry.QuantityRequiredPerServing ?? 0), unit: ingredient?.UnitOfMeasure ?? '' }
+      }),
+    })),
+    ingredients,
+    Object.fromEntries(Object.entries(reserved).map(([id, quantity]) => [String(id), quantity])),
+  )
+  return { alternatives: suggestions.map((suggestion: PureScrapSuggestion) => ({ menuItemId: Number(suggestion.dishId), itemName: suggestion.dishName, category: '', price: 0, usesLeftover: suggestion.usesLeftover.map((item) => ({ ingredientName: item.ingredientName, quantity: item.quantity, unitOfMeasure: item.unit })) })) }
 }
-export async function getScrapSuggestions(failedMenuItemId: number) { return getScrapBasedSuggestions(failedMenuItemId) }
+export async function getScrapSuggestions(failedMenuItemId: number, operatorId?: number, client?: SupabaseClient) { return getScrapBasedSuggestions(failedMenuItemId, operatorId, client) }
 
 export type { AllocationCommitment, CommitmentRef }

@@ -26,8 +26,8 @@ import { roundQuantity } from '@/lib/rules/allocation';
 import {
   checkDishStock,
   getOverPurchasedIngredients,
-  getScrapSuggestions,
 } from '@/lib/rules/macroFlex';
+import { getScrapSuggestions } from '@/lib/rules/scrapSuggestions';
 
 import type { Ingredient, MenuItem } from '@/lib/types';
 
@@ -383,8 +383,10 @@ export default function InventoryPage() {
   const scrapSuggestions = useMemo(
     () =>
       getScrapSuggestions(
+        '',
+        menuItems,
         ingredients,
-        menuItems
+        Object.fromEntries(Object.entries(reservedIngredients).map(([id, quantity]) => [String(id), quantity]))
       ),
     [ingredients, menuItems]
   );

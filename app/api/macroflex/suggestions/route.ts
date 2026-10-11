@@ -1,7 +1,11 @@
+import { requireRole } from '@/app/actions/auth'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { getScrapBasedSuggestions } from '@/lib/macroflex'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
+  const owner = await requireRole('owner')
+  if (!owner) return NextResponse.json({ error: 'Owner access required.' }, { status: 403 })
   try {
     const { searchParams } = new URL(request.url)
     const menuItemId = searchParams.get('menuItemId')
@@ -13,7 +17,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const result = await getScrapBasedSuggestions(parseInt(menuItemId, 10))
+    const result = await getScrapBasedSuggestions(parseInt(menuItemId, 10), Number(owner.id), createAdminClient())
 
     return NextResponse.json(result)
   } catch (error) {
