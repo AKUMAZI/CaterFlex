@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/app/dashboard-layout';
-import { supabase } from '@/lib/supabase';
 import type { DayOfWeek } from '@/lib/types';
 import { Card } from '@/components/ui/card';
-
-const OPERATOR_ID = 2;
+import {
+  loadOperatingRules,
+  saveOperatingRules as saveOperatingRulesAction,
+  type SettingRow,
+} from '@/app/actions/settings-actions';
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   0: 'Sunday',
@@ -88,35 +90,14 @@ export default function SettingsPage() {
     setLoading(true);
     setError('');
 
-    const { data, error: fetchError } = await supabase
-      .from('OPERATOR_SETTINGS')
-      .select(
-        `
-          SettingID,
-          OperatorID,
-          DayOfWeek,
-          OperatingStartTime,
-          OperatingEndTime,
-          MaxCateringEventsPerDay,
-          MaxMealPrepOrdersPerDay,
-          MaxGuestCountPerEvent
-        `
-      )
-      .eq('OperatorID', OPERATOR_ID)
-      .order('SettingID');
-
-    if (fetchError) {
-      console.error('Failed to load operating rules:', fetchError);
-      setError(
-        fetchError.message || 'Could not load operating rules from Supabase.'
-      );
+    const result = await loadOperatingRules();
+    if (!result.ok) {
+      setError(result.error);
       setLoading(false);
       return;
     }
 
-    
-    const rows = (data ?? []) as OperatorSettingRow[];
-    
+    const rows = result.rows ?? [];
     if (rows.length === 0) {
       setError('No operating rules were found for this operator.');
       setLoading(false);
@@ -128,48 +109,24 @@ export default function SettingsPage() {
       operatingHoursStart: DEFAULT_SETTINGS.operatingHoursStart,
       operatingHoursEnd: DEFAULT_SETTINGS.operatingHoursEnd,
       maxEventsPerDay: { ...DEFAULT_SETTINGS.maxEventsPerDay },
-      maxMealPrepOrdersPerDay: {
-        ...DEFAULT_SETTINGS.maxMealPrepOrdersPerDay,
-      },
+      maxMealPrepOrdersPerDay: { ...DEFAULT_SETTINGS.maxMealPrepOrdersPerDay },
       maxGuestsPerEvent: DEFAULT_SETTINGS.maxGuestsPerEvent,
     };
 
-    for (const row of rows) {
+    for (const row of rows as SettingRow[]) {
       const day = Number(row.DayOfWeek) as DayOfWeek;
-
       if (!ALL_DAYS.includes(day)) continue;
 
       const cateringLimit = row.MaxCateringEventsPerDay ?? 0;
-
-      // A day with 0 catering events is treated as a closed day.
-      if (cateringLimit > 0) {
-        nextSettings.operatingDays.push(day);
-      }
-
+      if (cateringLimit > 0) nextSettings.operatingDays.push(day);
       nextSettings.maxEventsPerDay[day] = cateringLimit;
-
-      nextSettings.maxMealPrepOrdersPerDay[day] =
-        row.MaxMealPrepOrdersPerDay ?? 0;
-
-      if (row.OperatingStartTime) {
-        nextSettings.operatingHoursStart = normalizeTime(
-          row.OperatingStartTime
-        );
-      }
-
-      if (row.OperatingEndTime) {
-        nextSettings.operatingHoursEnd = normalizeTime(
-          row.OperatingEndTime
-        );
-      }
-
-      if (row.MaxGuestCountPerEvent !== null) {
-        nextSettings.maxGuestsPerEvent = row.MaxGuestCountPerEvent;
-      }
+      nextSettings.maxMealPrepOrdersPerDay[day] = row.MaxMealPrepOrdersPerDay ?? 0;
+      if (row.OperatingStartTime) nextSettings.operatingHoursStart = normalizeTime(row.OperatingStartTime);
+      if (row.OperatingEndTime) nextSettings.operatingHoursEnd = normalizeTime(row.OperatingEndTime);
+      if (row.MaxGuestCountPerEvent !== null) nextSettings.maxGuestsPerEvent = row.MaxGuestCountPerEvent ?? DEFAULT_SETTINGS.maxGuestsPerEvent;
     }
 
     nextSettings.operatingDays.sort();
-
     setSettings(nextSettings);
     setLoading(false);
   }
@@ -220,71 +177,23 @@ export default function SettingsPage() {
     setMessage('');
     setError('');
 
-    try {
-      const { data: rows, error: fetchError } = await supabase
-        .from('OPERATOR_SETTINGS')
-        .select(
-          `
-            SettingID,
-            DayOfWeek
-          `
-        )
-        .eq('OperatorID', OPERATOR_ID);
+    const result = await saveOperatingRulesAction({
+      operatingHoursStart: settings.operatingHoursStart,
+      operatingHoursEnd: settings.operatingHoursEnd,
+      maxEventsPerDay: settings.maxEventsPerDay,
+      maxMealPrepOrdersPerDay: settings.maxMealPrepOrdersPerDay,
+      maxGuestsPerEvent: settings.maxGuestsPerEvent,
+    });
 
-      if (fetchError) {
-        throw fetchError;
-      }
-
-      const existingRows = (rows ?? []) as Array<{
-        SettingID: number;
-        DayOfWeek: string;
-      }>;
-
-      /*
-       * Update each existing day individually.
-       *
-       * We intentionally do not use upsert here because your current
-       * database already contains the 7 settings rows and we do not
-       * need to create duplicate rows.
-       */
-      for (const row of existingRows) {
-        const day = Number(row.DayOfWeek) as DayOfWeek;
-
-        if (!ALL_DAYS.includes(day)) continue;
-
-        const { error: updateError } = await supabase
-          .from('OPERATOR_SETTINGS')
-          .update({
-            OperatingStartTime: settings.operatingHoursStart,
-            OperatingEndTime: settings.operatingHoursEnd,
-            MaxCateringEventsPerDay: settings.maxEventsPerDay[day] ?? 0,
-            MaxMealPrepOrdersPerDay:
-              settings.maxMealPrepOrdersPerDay[day] ?? 0,
-            MaxGuestCountPerEvent: settings.maxGuestsPerEvent,
-          })
-          .eq('SettingID', row.SettingID)
-          .eq('OperatorID', OPERATOR_ID);
-
-        if (updateError) {
-          throw updateError;
-        }
-      }
-
-      setMessage('Operating rules saved successfully.');
-
-      // Reload from Supabase so the UI reflects the actual database values.
-      await loadSettings();
-    } catch (saveError) {
-      console.error('Failed to save operating rules:', saveError);
-
-      setError(
-        saveError instanceof Error
-          ? saveError.message
-          : 'Could not save operating rules.'
-      );
-    } finally {
+    if (!result.ok) {
+      setError(result.error);
       setSaving(false);
+      return;
     }
+
+    setMessage('Operating rules saved successfully.');
+    await loadSettings();
+    setSaving(false);
   }
 
   if (loading) {
