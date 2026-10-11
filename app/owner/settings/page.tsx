@@ -7,7 +7,6 @@ import { Card } from '@/components/ui/card';
 import {
   loadOperatingRules,
   saveOperatingRules as saveOperatingRulesAction,
-  type SettingRow,
 } from '@/app/actions/settings-actions';
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -113,7 +112,7 @@ export default function SettingsPage() {
       maxGuestsPerEvent: DEFAULT_SETTINGS.maxGuestsPerEvent,
     };
 
-    for (const row of rows as SettingRow[]) {
+    for (const row of rows as OperatorSettingRow[]) {
       const day = Number(row.DayOfWeek) as DayOfWeek;
       if (!ALL_DAYS.includes(day)) continue;
 

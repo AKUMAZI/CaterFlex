@@ -121,4 +121,3 @@ export async function saveOperatingRules(input: SettingsInput): Promise<Settings
   return { ok: true, rowsUpdated: existingRows.length }
 }
 
-export type { SettingRow, SettingsInput }
