@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const requireRole = vi.fn()
 const createAdminClient = vi.fn()
+const createNotification = vi.fn()
 vi.mock('@/app/actions/auth', () => ({ requireRole }))
 vi.mock('@/lib/supabase-admin', () => ({ createAdminClient }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
-vi.mock('@/lib/notifications', () => ({ createNotification: vi.fn() }))
+vi.mock('@/lib/notifications', () => ({ createNotification }))
 vi.mock('@/lib/rules/bookingValidation', () => ({ validateBooking: vi.fn(() => ({ valid: true, errors: [] })) }))
 vi.mock('@/lib/rules/allocation', () => ({
   computeBookingTotal: vi.fn(() => 0),
@@ -71,5 +72,29 @@ describe('updateBookingItemServings', () => {
       { BookingItemID: 1, BookingID: 10, MenuItemID: 4, Quantity: 3 },
       { BookingItemID: 2, BookingID: 10, MenuItemID: 5, Quantity: 6 },
     ], { onConflict: 'BookingItemID' })
+  })
+})
+
+describe('status notifications', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('notifies the customer after rejecting a booking', async () => {
+    requireRole.mockResolvedValue({ id: 7, role: 'owner' })
+    const update = vi.fn(() => Object.assign(query({ data: null, error: null }), { then: (resolve: (value: unknown) => unknown) => Promise.resolve(resolve({ error: null })) }))
+    createAdminClient.mockReturnValue({ from: vi.fn(() => Object.assign(query({ data: { BookingID: 10, CustomerID: 42, OperatorID: 7 }, error: null }), { update })) })
+    const { updateBookingStatus } = await loadAction()
+    await expect(updateBookingStatus(10, 'rejected')).resolves.toMatchObject({ ok: true })
+    expect(createNotification).toHaveBeenCalledWith(42, 'booking_status_changed', 'Your booking has been rejected.', { bookingId: 10 })
+  })
+
+  it('notifies the customer after rejecting a meal-prep order', async () => {
+    requireRole.mockResolvedValue({ id: 7, role: 'owner' })
+    const update = vi.fn(() => query({ data: null, error: null }))
+    createAdminClient.mockReturnValue({ from: vi.fn(() => Object.assign(query({ data: { MealPrepOrderID: 11, CustomerID: 42, OperatorID: 7 }, error: null }), { update })) })
+    const { updateMealPrepOrderStatus } = await loadAction()
+    await expect(updateMealPrepOrderStatus(11, 'rejected')).resolves.toMatchObject({ ok: true })
+    expect(createNotification).toHaveBeenCalledWith(42, 'meal_prep_order_status_changed', 'Your meal-prep order has been rejected.', { mealPrepOrderId: 11 })
   })
 })

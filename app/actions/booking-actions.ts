@@ -85,6 +85,62 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
     return { ok: false as const, error: 'Please select at least one valid menu item.' }
   }
 
+  const operatorId = 2
+  const [{ data: operatorSettingsRow, error: settingsError }, { data: existingMealPrepRows, error: existingMealPrepError }] = await Promise.all([
+    admin
+      .from('OPERATOR_SETTINGS')
+      .select('OperatorID, DayOfWeek, OperatingStartTime, OperatingEndTime, MaxCateringEventsPerDay, MaxMealPrepOrdersPerDay, MaxGuestCountPerEvent')
+      .eq('OperatorID', operatorId),
+    admin
+      .from('MEAL_PREP_ORDER')
+      .select('MealPrepOrderID, CustomerID, OperatorID, NextFulfillmentDate, MealsPerCycle, Status')
+      .eq('OperatorID', operatorId)
+      .eq('NextFulfillmentDate', eventDate)
+      .in('Status', ['pending', 'confirmed']),
+  ])
+  if (settingsError) return { ok: false as const, error: settingsError.message }
+  if (existingMealPrepError) return { ok: false as const, error: existingMealPrepError.message }
+  if (!operatorSettingsRow?.length) return { ok: false as const, error: 'Operator booking settings are unavailable.' }
+
+  const maxEventsPerDay = {} as OperatorSettings['maxEventsPerDay']
+  const maxMealPrepFulfillmentsPerDay = {} as OperatorSettings['maxMealPrepFulfillmentsPerDay']
+  for (const row of operatorSettingsRow) {
+    const day = Number(row.DayOfWeek) as DayOfWeek
+    maxEventsPerDay[day] = Number(row.MaxCateringEventsPerDay ?? 0)
+    maxMealPrepFulfillmentsPerDay[day] = Number(row.MaxMealPrepOrdersPerDay ?? 0)
+  }
+  const settings: OperatorSettings = {
+    operatingDays: Object.keys(maxEventsPerDay).map(Number) as DayOfWeek[],
+    operatingHoursStart: String(operatorSettingsRow[0].OperatingStartTime),
+    operatingHoursEnd: String(operatorSettingsRow[0].OperatingEndTime),
+    maxEventsPerDay,
+    maxGuestsPerEvent: Number(operatorSettingsRow[0].MaxGuestCountPerEvent),
+    maxMealPrepFulfillmentsPerDay,
+  }
+  const candidateBooking = {
+    id: 'new-meal-prep-order', customerId: String(customerId), customerName: '', customerEmail: '',
+    orderType: 'meal_prep', eventDate, eventTime: settings.operatingHoursStart, eventType: '', venue: '',
+    guestCount: mealsPerCycle, specialRequests: '', status: 'pending', selectedMenuItemIds: selectedMenuItemIds.map(String),
+    dietaryRestrictions: [], eventProfileId: '', totalCost: 0, paymentsReceived: 0, createdAt: new Date().toISOString(),
+    validationPassed: false, ruleViolations: [],
+  } satisfies Booking
+  const validation = validateBooking(
+    candidateBooking,
+    settings,
+    (existingMealPrepRows ?? []).map((row) => ({ ...candidateBooking, id: String(row.MealPrepOrderID), customerId: String(row.CustomerID), eventDate: String(row.NextFulfillmentDate), guestCount: Number(row.MealsPerCycle), status: String(row.Status) as Booking['status'] })),
+    [],
+    [],
+  )
+  if (!validation.valid) {
+    const failureMessage = validation.failures.map((failure) => failure.message).join(' ')
+    await createNotification(operatorId, 'capacity_conflict', `A meal-prep order for ${eventDate} was blocked: ${failureMessage}`)
+    return { ok: false as const, error: failureMessage }
+  }
+
+  if (hasAllergenConflict) {
+    await createNotification(operatorId, 'allergen_conflict', 'A customer attempted a meal-prep order with an allergen conflict.', {})
+  }
+
   const { data: order, error } = await admin
     .from('MEAL_PREP_ORDER')
     .insert({
@@ -110,6 +166,7 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
     return { ok: false as const, error: itemError.message }
   }
 
+  await createNotification(operatorId, 'new_meal_prep_order', `New meal-prep order request for ${eventDate}.`, { mealPrepOrderId: order.MealPrepOrderID })
   return { ok: true as const, mealPrepOrderId: order.MealPrepOrderID }
 }
 
@@ -483,7 +540,7 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
   if (!owner) return { ok: false as const, error: 'Owner access required.' }
 
   const admin = createAdminClient()
-  const { data: booking, error: fetchError } = await admin.from('BOOKING').select('BookingID, OperatorID').eq('BookingID', bookingId).maybeSingle()
+  const { data: booking, error: fetchError } = await admin.from('BOOKING').select('BookingID, CustomerID, OperatorID').eq('BookingID', bookingId).maybeSingle()
   if (fetchError) return { ok: false as const, error: fetchError.message }
   if (!booking || booking.OperatorID !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this booking.' }
 
@@ -525,6 +582,7 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
 
   const { error } = await admin.from('BOOKING').update({ Status: newStatus }).eq('BookingID', bookingId)
   if (error) return { ok: false as const, error: error.message }
+  await createNotification(Number(booking.CustomerID), 'booking_status_changed', `Your booking has been ${newStatus}.`, { bookingId })
   return { ok: true as const }
 }
 
@@ -573,7 +631,7 @@ export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStat
   const admin = createAdminClient()
   const { data: mealPrepOrder, error: fetchError } = await admin
     .from('MEAL_PREP_ORDER')
-    .select('MealPrepOrderID, OperatorID')
+    .select('MealPrepOrderID, CustomerID, OperatorID')
     .eq('MealPrepOrderID', mealPrepOrderId)
     .maybeSingle()
   if (fetchError) return { ok: false as const, error: fetchError.message }
@@ -586,5 +644,6 @@ export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStat
     .update({ Status: newStatus })
     .eq('MealPrepOrderID', mealPrepOrderId)
   if (error) return { ok: false as const, error: error.message }
+  await createNotification(Number(mealPrepOrder.CustomerID), 'meal_prep_order_status_changed', `Your meal-prep order has been ${newStatus}.`, { mealPrepOrderId })
   return { ok: true as const }
 }
