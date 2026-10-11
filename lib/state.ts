@@ -3,15 +3,6 @@ import { create } from 'zustand';
 import { supabase } from './supabase';
 
 import {
-  mockOperatorSettings,
-  mockMenuItems,
-  mockIngredients,
-  mockPayments,
-  buildInitialBookings,
-  buildInitialInvoices,
-} from './mockData';
-
-import {
   User,
   UserRole,
   Booking,
@@ -180,26 +171,36 @@ function settingsFromRows(
   };
 }
 
-/**
- * Temporary initial data.
- *
- * These remain temporarily because some parts of the
- * application still use Zustand for UI state and alerts.
- *
- * Database-backed pages do not use these values as
- * their source of truth.
- */
-const initialBookings = buildInitialBookings();
+const defaultOperatorSettings: OperatorSettings = {
+  operatingDays: [],
+  operatingHoursStart: '',
+  operatingHoursEnd: '',
+  maxEventsPerDay: {
+    0: 0,
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0,
+  },
+  maxGuestsPerEvent: 100,
+  maxMealPrepFulfillmentsPerDay: {
+    0: 0,
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0,
+  },
+};
 
-const initialMenuItems = syncMenuInventoryStatus(
-  mockMenuItems,
-  mockIngredients
-);
-
-const initialInvoices = buildInitialInvoices(
-  initialBookings,
-  initialMenuItems
-);
+const emptyBookings: Booking[] = [];
+const emptyMenuItems: MenuItem[] = [];
+const emptyIngredients: Ingredient[] = [];
+const emptyPayments: Payment[] = [];
+const emptyInvoices: Invoice[] = [];
 
 interface AppState {
   currentRole: UserRole;
@@ -263,19 +264,14 @@ export const useAppState = create<AppState>(
     currentRole: 'customer',
     currentUser: null,
 
-    bookings: initialBookings,
-    menuItems: initialMenuItems,
-    ingredients: mockIngredients,
-    operatorSettings: mockOperatorSettings,
-    payments: mockPayments,
-    invoices: initialInvoices,
+    bookings: emptyBookings,
+    menuItems: emptyMenuItems,
+    ingredients: emptyIngredients,
+    operatorSettings: defaultOperatorSettings,
+    payments: emptyPayments,
+    invoices: emptyInvoices,
 
-    alerts: buildAlerts({
-      bookings: initialBookings,
-      menuItems: initialMenuItems,
-      ingredients: mockIngredients,
-      operatorSettings: mockOperatorSettings,
-    }),
+    alerts: [],
 
     selectedMenuItemIds: [],
     customerDietaryRestrictions: [],
