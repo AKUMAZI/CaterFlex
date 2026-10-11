@@ -32,6 +32,32 @@ type MealPrepOrderDetails = {
 
 function todayInManila() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
+  }
+
+export async function getOwnerCalendarBookings() {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.', bookings: [] }
+
+  const admin = createAdminClient()
+  const operatorId = Number(owner.id)
+  const fieldsWithArchive = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, IsArchived'
+  type OwnerCalendarBookingRow = { BookingID: number; CustomerID: number; OperatorID: number; EventDate: string; EventTime: string; Venue: string; GuestCount: number; Status: string; IsArchived?: boolean | null }
+  let query = admin.from('BOOKING').select(fieldsWithArchive).eq('OperatorID', operatorId).in('Status', ['pending', 'confirmed']).order('EventDate')
+  let { data, error } = await query as { data: OwnerCalendarBookingRow[] | null; error: { message: string } | null }
+  if (error && /isarchived|column/i.test(error.message)) {
+    const fallback = await admin.from('BOOKING').select('BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status').eq('OperatorID', operatorId).in('Status', ['pending', 'confirmed']).order('EventDate')
+    data = fallback.data
+    error = fallback.error
+  }
+  if (error) return { ok: false as const, error: error.message, bookings: [] }
+
+  const customerIds = [...new Set((data ?? []).map((booking) => Number(booking.CustomerID)))]
+  const { data: customers, error: customerError } = customerIds.length > 0
+    ? await admin.from('CUSTOMER').select('CustomerID, Name').in('CustomerID', customerIds)
+    : { data: [], error: null }
+  if (customerError) return { ok: false as const, error: customerError.message, bookings: [] }
+  const names = new Map((customers ?? []).map((customer) => [Number(customer.CustomerID), String(customer.Name)]))
+  return { ok: true as const, bookings: (data ?? []).map((booking) => ({ ...booking, customerName: names.get(Number(booking.CustomerID)) ?? `Customer #${booking.CustomerID}` })) }
 }
 
 export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, items: BookingItemInput[]) {

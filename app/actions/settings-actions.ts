@@ -3,30 +3,9 @@
 import { requireRole } from '@/app/actions/auth'
 import { createAdminClient } from '@/lib/supabase-admin'
 import type { DayOfWeek } from '@/lib/types'
+import type { SettingRow, SettingsActionResult, SettingsInput } from '@/lib/settings-types'
 
 const ALL_DAYS: DayOfWeek[] = [0, 1, 2, 3, 4, 5, 6]
-
-type SettingsInput = {
-  operatingHoursStart: string
-  operatingHoursEnd: string
-  maxEventsPerDay: Record<DayOfWeek, number>
-  maxMealPrepOrdersPerDay: Record<DayOfWeek, number>
-  maxGuestsPerEvent: number
-}
-
-type SettingRow = {
-  SettingID: number
-  DayOfWeek: string
-  OperatingStartTime: string | null
-  OperatingEndTime: string | null
-  MaxCateringEventsPerDay: number | null
-  MaxMealPrepOrdersPerDay: number | null
-  MaxGuestCountPerEvent: number | null
-}
-
-export type SettingsActionResult =
-  | { ok: true; rowsUpdated: number; rows?: SettingRow[] }
-  | { ok: false; error: string }
 
 function isIntegerAtLeast(value: number, minimum: number) {
   return Number.isInteger(value) && value >= minimum

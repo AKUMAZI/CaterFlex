@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { expandMealPrepOrdersForMonth, type CalendarMealPrepOrder } from './calendar-meal-prep'
+import { expandMealPrepOrdersForMonth, filterCalendarBookings, groupCalendarItemsByDate, type CalendarBooking, type CalendarMealPrepOrder } from './calendar-meal-prep'
 
 const order = (overrides: Partial<CalendarMealPrepOrder> = {}): CalendarMealPrepOrder => ({ id: 1, customerName: 'Alex', status: 'active', nextFulfillmentDate: '2026-01-29', recurrencePattern: 'weekly', mealsPerCycle: 6, ...overrides })
+
+const booking = (overrides: Partial<CalendarBooking> = {}): CalendarBooking => ({ BookingID: 1, CustomerID: 1, EventDate: '2026-01-15', EventTime: '12:00', Venue: 'Venue', GuestCount: 10, Status: 'confirmed', customerName: 'Alex', ...overrides })
+
+describe('calendar item filtering', () => {
+  it('excludes cancelled, rejected, and archived bookings', () => {
+    expect(filterCalendarBookings([booking(), booking({ BookingID: 2, Status: 'cancelled' }), booking({ BookingID: 3, Status: 'rejected' }), booking({ BookingID: 4, IsArchived: true })])).toHaveLength(1)
+  })
+
+  it('keeps all five items and limits only the chip view', () => {
+    const bookings = Array.from({ length: 5 }, (_, index) => booking({ BookingID: index + 1 }))
+    const grouped = groupCalendarItemsByDate(bookings, [])
+    expect(grouped['2026-01-15']).toHaveLength(5)
+    expect(grouped['2026-01-15'].slice(0, 3)).toHaveLength(3)
+  })
+})
 
 describe('expandMealPrepOrdersForMonth', () => {
   it('repeats weekly across months beyond 28 days', () => {

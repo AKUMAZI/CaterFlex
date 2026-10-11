@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/app/dashboard-layout';
 import type { DayOfWeek } from '@/lib/types';
+import type { OperatorSettingRow } from '@/lib/settings-types';
 import { Card } from '@/components/ui/card';
 import {
   loadOperatingRules,
@@ -20,17 +21,6 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
 };
 
 const ALL_DAYS: DayOfWeek[] = [0, 1, 2, 3, 4, 5, 6];
-
-type OperatorSettingRow = {
-  SettingID: number;
-  OperatorID: number | null;
-  DayOfWeek: string;
-  OperatingStartTime: string | null;
-  OperatingEndTime: string | null;
-  MaxCateringEventsPerDay: number | null;
-  MaxMealPrepOrdersPerDay: number | null;
-  MaxGuestCountPerEvent: number | null;
-};
 
 type SettingsState = {
   operatingDays: DayOfWeek[];
