@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-type BookingSection = 'all' | 'catering' | 'meal_prep' | 'archived';
+type BookingSection = 'catering' | 'meal_prep' | 'archived';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { getCustomersByIds } from '@/app/actions/auth';
@@ -148,7 +148,7 @@ export default function BookingsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [activeSection, setActiveSection] =
-    useState<BookingSection>('all');
+    useState<BookingSection>('catering');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [servingDrafts, setServingDrafts] = useState<Record<number, Record<number, number>>>({});
   const [savingServings, setSavingServings] = useState<number | null>(null);
@@ -491,13 +491,9 @@ export default function BookingsPage() {
     },
   ];
 
-  const visibleSections =
-    activeSection === 'all'
-      ? bookingSections
-      : bookingSections.filter(
-          (section) =>
-            section.key === activeSection
-        );
+  const visibleSections = bookingSections.filter(
+    (section) => section.key === activeSection
+  );
 
   // ============================================================
   // PAGE
@@ -535,18 +531,7 @@ export default function BookingsPage() {
                   .length,
             },
 
-            {
-              key: 'meal_prep' as const,
-              label: 'Meal prep orders',
-              count:
-                bookingSections[1].bookings
-                  .length,
-            },
-            {
-              key: 'archived' as const,
-              label: 'Archived',
-              count: archivedBookings.length,
-            },
+
           ].map((tab) => (
             <Button
               key={tab.key}
@@ -565,11 +550,7 @@ export default function BookingsPage() {
               }
               className="gap-2"
             >
-              {tab.key === 'meal_prep' ? (
-                <PackageCheck className="h-4 w-4" />
-              ) : (
-                <Utensils className="h-4 w-4" />
-              )}
+              <Utensils className="h-4 w-4" />
 
               {tab.label}
 
