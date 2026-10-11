@@ -457,7 +457,6 @@ export default function BookingsPage() {
   // BOOKING SECTIONS
   // ============================================================
 
-  const activeBookings = bookings.filter((booking) => !booking.IsArchived);
   const archivedBookings = bookings.filter((booking) => booking.IsArchived);
   const bookingSections = [
     {
@@ -528,12 +527,6 @@ export default function BookingsPage() {
           aria-label="Booking type"
         >
           {[
-            {
-              key: 'all' as const,
-              label: 'All bookings',
-              count: activeBookings.length,
-            },
-
             {
               key: 'catering' as const,
               label: 'Catering events',
