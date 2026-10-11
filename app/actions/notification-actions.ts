@@ -5,6 +5,21 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 const NOTIFICATION_FIELDS = 'NotificationID, OperatorID, NotificationType, Message, RelatedBookingID, RelatedMealPrepOrderID, IsRead, CreatedAt'
 
+export async function getUnreadNotificationCount() {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.', count: 0 }
+
+  const { count, error } = await createAdminClient()
+    .from('NOTIFICATION')
+    .select('NotificationID', { count: 'exact', head: true })
+    .eq('OperatorID', Number(owner.id))
+    .eq('IsRead', false)
+
+  if (error) return { ok: false as const, error: error.message, count: 0 }
+  return { ok: true as const, count: count ?? 0 }
+}
+
+
 export async function getOwnerNotifications() {
   const owner = await requireRole('owner')
   if (!owner) return { ok: false as const, error: 'Owner access required.', notifications: [] }

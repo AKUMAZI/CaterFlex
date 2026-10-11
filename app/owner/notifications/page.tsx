@@ -16,6 +16,7 @@ import {
   getOwnerNotifications,
   markNotificationRead,
 } from '@/app/actions/notification-actions'
+import { notifyNotificationsUpdated } from '@/lib/notification-client'
 
 import { DashboardLayout } from '@/app/dashboard-layout'
 
@@ -111,6 +112,7 @@ export default function OwnerNotificationsPage() {
             : item
         )
       )
+      notifyNotificationsUpdated()
     }
   }
 
