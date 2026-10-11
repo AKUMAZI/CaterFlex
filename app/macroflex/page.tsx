@@ -566,6 +566,11 @@ export default function MacroFlexPage() {
                                               ·{' '}
                                               {formatPrice(suggestion.price)}
                                             </p>
+                                            {suggestion.usesMissingIngredient?.length ? (
+                                              <Badge variant="secondary" className="mt-2">
+                                                Uses {suggestion.usesMissingIngredient.join(', ')}
+                                              </Badge>
+                                            ) : null}
                                           </div>
                                         )
                                       )}
