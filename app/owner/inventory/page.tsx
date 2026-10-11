@@ -27,7 +27,7 @@ import {
   checkDishStock,
   getOverPurchasedIngredients,
 } from '@/lib/rules/macroFlex';
-import { getScrapSuggestions } from '@/lib/rules/scrapSuggestions';
+import { getScrapSuggestionsForBlockedDishes } from '@/lib/rules/scrapSuggestions';
 
 import type { Ingredient, MenuItem } from '@/lib/types';
 
@@ -382,13 +382,8 @@ export default function InventoryPage() {
    */
   const scrapSuggestions = useMemo(
     () =>
-      getScrapSuggestions(
-        '',
-        menuItems,
-        ingredients,
-        Object.fromEntries(Object.entries(reservedIngredients).map(([id, quantity]) => [String(id), quantity]))
-      ),
-    [ingredients, menuItems]
+      getScrapSuggestionsForBlockedDishes(menuItems, ingredients, reservedIngredients),
+    [ingredients, menuItems, reservedIngredients]
   );
 
   /*

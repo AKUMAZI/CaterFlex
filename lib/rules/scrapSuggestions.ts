@@ -8,6 +8,8 @@ export interface ScrapSuggestionIngredient {
 export interface ScrapSuggestion {
   dishId: string
   dishName: string
+  category?: string
+  price?: number
   usesLeftover: ScrapSuggestionIngredient[]
 }
 
@@ -15,6 +17,8 @@ export interface ScrapSuggestionDish {
   id: string
   name: string
   availability?: boolean
+  category?: string
+  price?: number
   requiredIngredients: Array<{
     id: string
     name: string
@@ -28,6 +32,28 @@ export interface ScrapSuggestionStock {
   name: string
   currentStock: number
   unit: string
+}
+
+export function isDishBlocked(
+  dish: ScrapSuggestionDish,
+  ingredients: ScrapSuggestionStock[],
+  reserved: Record<string, number> = {},
+): boolean {
+  const stockById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]))
+  return dish.requiredIngredients.some((requirement) => (
+    Math.max(0, stockById.get(requirement.id)?.currentStock ?? 0) - (reserved[requirement.id] ?? 0) < requirement.qty
+  ))
+}
+
+export function getScrapSuggestionsForBlockedDishes(
+  dishes: ScrapSuggestionDish[],
+  ingredients: ScrapSuggestionStock[],
+  reserved: Record<string, number> = {},
+): ScrapSuggestion[] {
+  const suggestions = dishes
+    .filter((dish) => isDishBlocked(dish, ingredients, reserved))
+    .flatMap((dish) => getScrapSuggestions(dish.id, dishes, ingredients, reserved))
+  return Array.from(new Map(suggestions.map((suggestion) => [suggestion.dishId, suggestion])).values())
 }
 
 export function getScrapSuggestions(
@@ -52,6 +78,8 @@ export function getScrapSuggestions(
     .map((dish) => ({
       dishId: dish.id,
       dishName: dish.name,
+      category: dish.category,
+      price: dish.price,
       usesLeftover: dish.requiredIngredients.map((requirement) => {
         const stock = stockById.get(requirement.id)
         return {

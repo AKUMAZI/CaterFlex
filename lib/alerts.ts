@@ -12,13 +12,14 @@ import {
   checkDishStock,
   getOverPurchasedIngredients,
 } from './rules/macroFlex';
-import { getScrapSuggestions } from './rules/scrapSuggestions';
+import { getScrapSuggestionsForBlockedDishes } from './rules/scrapSuggestions';
 
 export function buildAlerts(state: {
   bookings: Booking[];
   menuItems: MenuItem[];
   ingredients: Ingredient[];
   operatorSettings: OperatorSettings;
+  reservedIngredients?: Record<string, number>;
 }): Alert[] {
   const alerts: Alert[] = [];
   const now = new Date().toISOString();
@@ -107,16 +108,20 @@ export function buildAlerts(state: {
     }
   });
 
-  getScrapSuggestions(
-    '',
+  const scrapIngredients = state.ingredients.map((ingredient) => ({
+    id: ingredient.id,
+    name: ingredient.name,
+    currentStock: ingredient.currentStock,
+    unit: ingredient.unit,
+  }));
+  const reservedIngredients = state.reservedIngredients ?? {};
+  const scrapSuggestions = getScrapSuggestionsForBlockedDishes(
     state.menuItems,
-    state.ingredients.map((ingredient) => ({
-      id: ingredient.id,
-      name: ingredient.name,
-      currentStock: ingredient.currentStock,
-      unit: ingredient.unit,
-    })),
-  ).slice(0, 5).forEach((suggestion) => {
+    scrapIngredients,
+    reservedIngredients,
+  );
+
+  scrapSuggestions.slice(0, 5).forEach((suggestion) => {
     alerts.push({
       id: `alert-scrap-${suggestion.dishId}`,
       type: 'scrapSuggestion',

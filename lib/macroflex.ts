@@ -201,11 +201,13 @@ export async function checkOverPurchase(operatorId?: number): Promise<{ overPurc
 }
 
 export async function getScrapBasedSuggestions(failedMenuItemId: number, operatorId?: number, client: SupabaseClient = supabase): Promise<ScrapSuggestionResult> {
-  const { data: menuData, error: menuError } = await client.from('MENU_ITEM').select('MenuItemID, ItemName, Availability, DISH_INGREDIENT(IngredientID, QuantityRequiredPerServing, INGREDIENT:INGREDIENT(IngredientID, IngredientName, UnitOfMeasure, CurrentStock, OperatorID))')
+  const { data: menuData, error: menuError } = await client.from('MENU_ITEM').select('MenuItemID, ItemName, Category, Price, Availability, DISH_INGREDIENT(IngredientID, QuantityRequiredPerServing, INGREDIENT:INGREDIENT(IngredientID, IngredientName, UnitOfMeasure, CurrentStock, OperatorID))')
   if (menuError) throw menuError
   const rows = (menuData ?? []) as unknown as Array<{
     MenuItemID: number
     ItemName: string
+    Category: string | null
+    Price: number | null
     Availability: boolean | null
     DISH_INGREDIENT?: Array<{ IngredientID: number; QuantityRequiredPerServing: number; INGREDIENT?: Ingredient | Ingredient[] & { OperatorID?: number }}>
   }>
@@ -224,6 +226,8 @@ export async function getScrapBasedSuggestions(failedMenuItemId: number, operato
       id: String(row.MenuItemID),
       name: row.ItemName,
       availability: row.Availability ?? true,
+      category: row.Category ?? undefined,
+      price: Number(row.Price ?? 0),
       requiredIngredients: (row.DISH_INGREDIENT ?? []).map((entry) => {
         const ingredient = Array.isArray(entry.INGREDIENT) ? entry.INGREDIENT[0] : entry.INGREDIENT
         return { id: String(entry.IngredientID), name: ingredient?.IngredientName ?? '', qty: Number(entry.QuantityRequiredPerServing ?? 0), unit: ingredient?.UnitOfMeasure ?? '' }
@@ -232,7 +236,7 @@ export async function getScrapBasedSuggestions(failedMenuItemId: number, operato
     ingredients,
     Object.fromEntries(Object.entries(reserved).map(([id, quantity]) => [String(id), quantity])),
   )
-  return { alternatives: suggestions.map((suggestion: PureScrapSuggestion) => ({ menuItemId: Number(suggestion.dishId), itemName: suggestion.dishName, category: '', price: 0, usesLeftover: suggestion.usesLeftover.map((item) => ({ ingredientName: item.ingredientName, quantity: item.quantity, unitOfMeasure: item.unit })) })) }
+  return { alternatives: suggestions.map((suggestion: PureScrapSuggestion) => ({ menuItemId: Number(suggestion.dishId), itemName: suggestion.dishName, category: suggestion.category ?? '', price: suggestion.price ?? 0, usesLeftover: suggestion.usesLeftover.map((item) => ({ ingredientName: item.ingredientName, quantity: item.quantity, unitOfMeasure: item.unit })) })) }
 }
 export async function getScrapSuggestions(failedMenuItemId: number, operatorId?: number, client?: SupabaseClient) { return getScrapBasedSuggestions(failedMenuItemId, operatorId, client) }
 

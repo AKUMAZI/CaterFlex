@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getScrapSuggestions } from './scrapSuggestions'
+import { getScrapSuggestions, getScrapSuggestionsForBlockedDishes } from './scrapSuggestions'
 
 const ingredients = [
   { id: 'rice', name: 'Rice', currentStock: 10, unit: 'kg' },
@@ -15,6 +15,22 @@ const dishes = [
   { id: 'too-much', name: 'Too Much', availability: true, requiredIngredients: [{ id: 'beans', name: 'Beans', qty: 5, unit: 'kg' }] },
   { id: 'empty', name: 'Empty Recipe', availability: true, requiredIngredients: [] },
 ]
+
+describe('blocked dish suggestion selection', () => {
+  it('returns no suggestions when no dish is blocked', () => {
+    expect(getScrapSuggestionsForBlockedDishes([dishes[1], dishes[2]], ingredients)).toEqual([])
+  })
+
+  it('excludes the blocked dish from its own suggestions', () => {
+    expect(getScrapSuggestions('rice-dish', [dishes[1], dishes[2]], ingredients).map((suggestion) => suggestion.dishId)).toEqual(['outside'])
+  })
+
+  it('deduplicates an alternate shared by two blocked dishes', () => {
+    const blockedA = { ...dishes[4], id: 'blocked-a' }
+    const blockedB = { ...dishes[4], id: 'blocked-b' }
+    expect(getScrapSuggestionsForBlockedDishes([blockedA, blockedB, dishes[1]], ingredients).map((suggestion) => suggestion.dishId)).toEqual(['rice-dish'])
+  })
+})
 
 describe('getScrapSuggestions', () => {
   it('suggests stocked alternate dishes, including ingredients outside the blocked recipe', () => {
