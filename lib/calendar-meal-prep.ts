@@ -10,6 +10,22 @@ export type CalendarMealPrepOrder = {
 
 export type CalendarMealPrepOccurrence = CalendarMealPrepOrder & { fulfillmentDate: string }
 
+export type CalendarBooking = {
+  BookingID: number
+  CustomerID: number
+  EventDate: string
+  EventTime: string
+  Venue: string
+  GuestCount: number
+  Status: string
+  IsArchived?: boolean | null
+  customerName: string
+}
+
+export type CalendarItem =
+  | { kind: 'catering'; id: number; date: string; name: string; status: string; booking: CalendarBooking }
+  | { kind: 'meal'; id: number; date: string; name: string; status: string; mealPrep: CalendarMealPrepOccurrence }
+
 function addDaysUtc(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`)
   value.setUTCDate(value.getUTCDate() + days)
@@ -35,5 +51,29 @@ export function expandMealPrepOrdersForMonth(orders: CalendarMealPrepOrder[], ye
   })
 }
 
+export function filterCalendarBookings(bookings: CalendarBooking[]) {
+  return bookings.filter((booking) => !booking.IsArchived && ['pending', 'confirmed'].includes(booking.Status.toLowerCase()))
+}
+
+export function groupCalendarItemsByDate(bookings: CalendarBooking[], mealPrepOrders: CalendarMealPrepOccurrence[]) {
+  const items: CalendarItem[] = [
+    ...filterCalendarBookings(bookings).map((booking) => ({ kind: 'catering' as const, id: booking.BookingID, date: booking.EventDate.slice(0, 10), name: booking.customerName, status: booking.Status, booking })),
+    ...mealPrepOrders.map((mealPrep) => ({ kind: 'meal' as const, id: mealPrep.id, date: mealPrep.fulfillmentDate, name: mealPrep.customerName, status: mealPrep.status, mealPrep })),
+  ]
+  return items.reduce<Record<string, CalendarItem[]>>((groups, item) => {
+    ;(groups[item.date] ??= []).push(item)
+    return groups
+  }, {})
+}
+
 export const statusLabel = (status: string) => status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
 export const addDays = addDaysUtc
+
+export const calendarChipClass = (item: CalendarItem) => item.kind === 'meal'
+  ? `border border-teal-600/50 bg-teal-100 text-teal-800 ${item.status.toLowerCase() === 'pending' ? 'border-dashed' : item.status.toLowerCase() === 'paused' ? 'opacity-60' : ''}`
+  : 'bg-primary/20 text-primary'
+
+export const calendarStatusClass = (status: string) => ['active', 'confirmed'].includes(status.toLowerCase()) ? 'bg-green-100 text-green-800' : status.toLowerCase() === 'paused' ? 'bg-muted text-muted-foreground' : 'bg-yellow-100 text-yellow-800'
+
+export const chipItems = (items: CalendarItem[]) => items.slice(0, 3)
+export const detailItems = (items: CalendarItem[]) => items
