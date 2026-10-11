@@ -526,12 +526,21 @@ export default function BookingsPage() {
             {
               key: 'catering' as const,
               label: 'Catering events',
-              count:
-                bookingSections[0].bookings
-                  .length,
+              count: bookingSections[0].bookings.length,
+              icon: Utensils,
             },
-
-
+            {
+              key: 'meal_prep' as const,
+              label: 'Meal Prep Orders',
+              count: bookingSections[1].bookings.length,
+              icon: PackageCheck,
+            },
+            {
+              key: 'archived' as const,
+              label: 'Archived',
+              count: bookingSections[2].bookings.length,
+              icon: PackageCheck,
+            },
           ].map((tab) => (
             <Button
               key={tab.key}
