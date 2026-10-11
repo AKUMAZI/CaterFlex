@@ -3,6 +3,7 @@ export interface ScrapSuggestionIngredient {
   ingredientName: string
   quantity: number
   unit: string
+  remainingStock?: number
 }
 
 export interface ScrapSuggestion {
@@ -11,6 +12,7 @@ export interface ScrapSuggestion {
   category?: string
   price?: number
   usesLeftover: ScrapSuggestionIngredient[]
+  usesMissingIngredient?: string[]
 }
 
 export interface ScrapSuggestionDish {
@@ -43,6 +45,33 @@ export function isDishBlocked(
   return dish.requiredIngredients.some((requirement) => (
     Math.max(0, stockById.get(requirement.id)?.currentStock ?? 0) - (reserved[requirement.id] ?? 0) < requirement.qty
   ))
+}
+
+export function rankScrapSuggestions(
+  blockedDish: ScrapSuggestionDish,
+  shortfallIngredientIds: string[],
+  suggestions: ScrapSuggestion[],
+): ScrapSuggestion[] {
+  const shortfallIds = new Set(shortfallIngredientIds)
+  const blockedIds = new Set(blockedDish.requiredIngredients.map((ingredient) => ingredient.id))
+  const blockedNames = new Map(blockedDish.requiredIngredients.map((ingredient) => [ingredient.id, ingredient.name]))
+  const share = (suggestion: ScrapSuggestion) => suggestion.usesLeftover.reduce((total, ingredient) => total + (shortfallIds.has(ingredient.ingredientId) ? ingredient.quantity / Math.max(ingredient.remainingStock ?? 0, Number.EPSILON) : 0), 0)
+
+  return [...suggestions].sort((a, b) => {
+    const aUsesMissing = a.usesLeftover.some((ingredient) => shortfallIds.has(ingredient.ingredientId))
+    const bUsesMissing = b.usesLeftover.some((ingredient) => shortfallIds.has(ingredient.ingredientId))
+    if (aUsesMissing !== bUsesMissing) return aUsesMissing ? -1 : 1
+
+    const shareDifference = share(b) - share(a)
+    if (shareDifference !== 0) return shareDifference
+
+    const sharedDifference = b.usesLeftover.filter((ingredient) => blockedIds.has(ingredient.ingredientId)).length - a.usesLeftover.filter((ingredient) => blockedIds.has(ingredient.ingredientId)).length
+    if (sharedDifference !== 0) return sharedDifference
+    return a.dishName.localeCompare(b.dishName)
+  }).map((suggestion) => ({
+    ...suggestion,
+    usesMissingIngredient: suggestion.usesLeftover.filter((ingredient) => shortfallIds.has(ingredient.ingredientId)).map((ingredient) => blockedNames.get(ingredient.ingredientId) ?? ingredient.ingredientName),
+  }))
 }
 
 export function getScrapSuggestionsForBlockedDishes(
@@ -82,12 +111,17 @@ export function getScrapSuggestions(
       price: dish.price,
       usesLeftover: dish.requiredIngredients.map((requirement) => {
         const stock = stockById.get(requirement.id)
-        return {
+        const leftover = {
           ingredientId: requirement.id,
           ingredientName: stock?.name ?? requirement.name,
           quantity: requirement.qty,
           unit: stock?.unit ?? requirement.unit,
         }
+        Object.defineProperty(leftover, 'remainingStock', {
+          value: pool.get(requirement.id) ?? 0,
+          enumerable: false,
+        })
+        return leftover
       }),
     }))
 }

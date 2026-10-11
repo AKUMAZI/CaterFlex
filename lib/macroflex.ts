@@ -1,12 +1,14 @@
 import { supabase } from './supabase'
 import { buildCommitment, computeAllocationShortfalls, computeOrderShortfalls, excludePrepared, expandRecurringDates, orderPrepWindow, roundQuantity, servingsForBookingItem, servingsForOrder, type AllocationCommitment, type CommitmentRef } from './rules/allocation'
-import { getScrapSuggestions as getPureScrapSuggestions, type ScrapSuggestion as PureScrapSuggestion } from './rules/scrapSuggestions'
+import { getScrapSuggestions as getPureScrapSuggestions, rankScrapSuggestions, type ScrapSuggestion as PureScrapSuggestion } from './rules/scrapSuggestions'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface IngredientShortfall { ingredientName: string; required: number; available: number; shortBy: number; unitOfMeasure: string; allocated?: number }
 export interface SufficiencyCheckResult { sufficient: boolean; hasNoIngredients: boolean; shortfalls: IngredientShortfall[] }
 export interface OverPurchasedIngredient { ingredientName: string; currentStock: number; maxCapacity: number; exceededBy: number; unitOfMeasure: string }
-export interface ScrapSuggestion { menuItemId: number; itemName: string; category: string; price: number; usesLeftover: Array<{ ingredientName: string; quantity: number; unitOfMeasure: string }> }
+export interface ScrapSuggestion { menuItemId: number; itemName: string; category: string; price: number;   usesLeftover: Array<{ ingredientName: string; quantity: number; unitOfMeasure: string }>
+  usesMissingIngredient?: string[]
+}
 export interface ScrapSuggestionResult { alternatives: ScrapSuggestion[] }
 
 interface IngredientRow { IngredientID: number; QuantityRequiredPerServing: number; INGREDIENT?: Ingredient | Ingredient[] }
@@ -236,7 +238,22 @@ export async function getScrapBasedSuggestions(failedMenuItemId: number, operato
     ingredients,
     Object.fromEntries(Object.entries(reserved).map(([id, quantity]) => [String(id), quantity])),
   )
-  return { alternatives: suggestions.map((suggestion: PureScrapSuggestion) => ({ menuItemId: Number(suggestion.dishId), itemName: suggestion.dishName, category: suggestion.category ?? '', price: suggestion.price ?? 0, usesLeftover: suggestion.usesLeftover.map((item) => ({ ingredientName: item.ingredientName, quantity: item.quantity, unitOfMeasure: item.unit })) })) }
+  const menuItems = rows.map((row) => ({
+    id: String(row.MenuItemID),
+    name: row.ItemName,
+    availability: row.Availability ?? true,
+    category: row.Category ?? undefined,
+    price: Number(row.Price ?? 0),
+    requiredIngredients: (row.DISH_INGREDIENT ?? []).map((entry) => {
+      const ingredient = Array.isArray(entry.INGREDIENT) ? entry.INGREDIENT[0] : entry.INGREDIENT
+      return { id: String(entry.IngredientID), name: ingredient?.IngredientName ?? '', qty: Number(entry.QuantityRequiredPerServing ?? 0), unit: ingredient?.UnitOfMeasure ?? '' }
+    }),
+  }))
+  const blockedDish = menuItems.find((dish) => dish.id === String(failedMenuItemId))
+  const stockById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient.currentStock - (reserved[Number(ingredient.id)] ?? 0)]))
+  const shortfallIds = blockedDish?.requiredIngredients.filter((ingredient) => (stockById.get(ingredient.id) ?? 0) < ingredient.qty).map((ingredient) => ingredient.id) ?? []
+  const rankedSuggestions = blockedDish ? rankScrapSuggestions(blockedDish, shortfallIds, suggestions) : suggestions
+  return { alternatives: rankedSuggestions.map((suggestion: PureScrapSuggestion) => ({ menuItemId: Number(suggestion.dishId), itemName: suggestion.dishName, category: suggestion.category ?? '', price: suggestion.price ?? 0, usesMissingIngredient: suggestion.usesMissingIngredient, usesLeftover: suggestion.usesLeftover.map((item) => ({ ingredientName: item.ingredientName, quantity: item.quantity, unitOfMeasure: item.unit })) })) }
 }
 export async function getScrapSuggestions(failedMenuItemId: number, operatorId?: number, client?: SupabaseClient) { return getScrapBasedSuggestions(failedMenuItemId, operatorId, client) }
 
