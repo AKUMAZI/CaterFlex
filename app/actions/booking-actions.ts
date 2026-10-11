@@ -8,7 +8,7 @@ import { createNotification } from '@/lib/notifications'
 import { computeBookingTotal, servingsForBookingItem } from '@/lib/rules/allocation'
 import { revalidatePath } from 'next/cache'
 
-const BOOKING_FIELDS = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, AllergenConflictFlag'
+const BOOKING_FIELDS = 'BookingID, CustomerID, OperatorID, EventDate, EventTime, Venue, GuestCount, Status, AllergenConflictFlag, IsArchived, ArchivedAt'
 const BOOKING_ITEM_FIELDS = 'BookingItemID, BookingID, MenuItemID, Quantity'
 
 type BookingDetails = {
@@ -396,7 +396,7 @@ export async function getOwnerBookings() {
   const operatorId = Number(owner.id)
   const [{ data: bookings, error }, { data: mealPrepOrders, error: mealPrepError }] = await Promise.all([
     admin.from('BOOKING').select(BOOKING_FIELDS).eq('OperatorID', operatorId).order('BookingID', { ascending: false }),
-    admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status, AllergenConflictFlag').eq('OperatorID', operatorId).order('MealPrepOrderID', { ascending: false }),
+    admin.from('MEAL_PREP_ORDER').select('MealPrepOrderID, CustomerID, OperatorID, RecurrencePattern, MealsPerCycle, Status, AllergenConflictFlag, IsArchived, ArchivedAt, NextFulfillmentDate').eq('OperatorID', operatorId).order('MealPrepOrderID', { ascending: false }),
   ])
   if (error) return { ok: false as const, error: error.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
   if (mealPrepError) return { ok: false as const, error: mealPrepError.message, bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
@@ -622,6 +622,33 @@ export async function resumeMealPrepOrder(mealPrepOrderId: number) {
 export async function cancelMealPrepOrder(mealPrepOrderId: number) {
   return updateCustomerMealPrepStatus(mealPrepOrderId, ['pending', 'confirmed', 'active', 'paused'], 'cancelled')
 }
+
+async function setArchiveState(kind: 'booking' | 'meal_prep', id: number, archived: boolean) {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.' }
+  const admin = createAdminClient()
+  const table = kind === 'booking' ? 'BOOKING' : 'MEAL_PREP_ORDER'
+  const idColumn = kind === 'booking' ? 'BookingID' : 'MealPrepOrderID'
+  const { data: row, error: fetchError } = await admin.from(table).select(`${idColumn}, OperatorID, Status, EventDate, IsArchived`).eq(idColumn, id).maybeSingle()
+  if (fetchError) return { ok: false as const, error: fetchError.message }
+  if (!row || Number(row.OperatorID) !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this order.' }
+  if (archived && !row.IsArchived) {
+    const status = String(row.Status ?? '').toLowerCase()
+    const finished = kind === 'meal_prep'
+      ? status === 'rejected' || status === 'cancelled'
+      : status === 'rejected' || status === 'cancelled' || status === 'prepared' || (status === 'confirmed' && String(row.EventDate ?? '') < todayInManila())
+    if (!finished) return { ok: false as const, error: 'Only finished orders can be archived. Pending, active, and paused orders must remain visible.' }
+  }
+  const { error } = await admin.from(table).update({ IsArchived: archived, ArchivedAt: archived ? new Date().toISOString() : null }).eq(idColumn, id)
+  if (error) return { ok: false as const, error: error.message }
+  revalidatePath('/owner/bookings')
+  return { ok: true as const }
+}
+
+export async function archiveBooking(bookingId: number) { return setArchiveState('booking', bookingId, true) }
+export async function restoreBooking(bookingId: number) { return setArchiveState('booking', bookingId, false) }
+export async function archiveMealPrepOrder(id: number) { return setArchiveState('meal_prep', id, true) }
+export async function restoreMealPrepOrder(id: number) { return setArchiveState('meal_prep', id, false) }
 
 export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStatus: 'active' | 'rejected') {
   const owner = await requireRole('owner')

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-type BookingSection = 'all' | 'catering' | 'meal_prep';
+type BookingSection = 'all' | 'catering' | 'meal_prep' | 'archived';
 
 import { DashboardLayout } from '@/app/dashboard-layout';
 import { getCustomersByIds } from '@/app/actions/auth';
@@ -12,6 +12,10 @@ import {
   updateBookingStatus as updateBookingStatusAction,
   updateMealPrepOrderStatus as updateMealPrepOrderStatusAction,
   updateBookingItemServings,
+  archiveBooking,
+  restoreBooking,
+  archiveMealPrepOrder,
+  restoreMealPrepOrder,
 } from '@/app/actions/booking-actions';
 import { computeBookingTotal } from '@/lib/rules/allocation';
 
@@ -40,6 +44,8 @@ type Booking = {
   GuestCount: number;
   Status: string | null;
   AllergenConflictFlag: boolean | null;
+  IsArchived?: boolean | null;
+  ArchivedAt?: string | null;
 };
 
 type MealPrepOrder = {
@@ -425,6 +431,18 @@ export default function BookingsPage() {
     }
   };
 
+  const archiveItem = async (booking: BookingDisplay, archived: boolean) => {
+    if (!archived && !window.confirm('Restore this order?')) return;
+    if (archived && !window.confirm('Archive this booking? You can restore it from the Archived filter.')) return;
+    setUpdatingId(booking.BookingID);
+    const result = booking.OrderType === 'meal_prep'
+      ? (archived ? await archiveMealPrepOrder(booking.mealPrepOrderId!) : await restoreMealPrepOrder(booking.mealPrepOrderId!))
+      : (archived ? await archiveBooking(booking.BookingID) : await restoreBooking(booking.BookingID));
+    if (!result.ok) alert(result.error);
+    else setBookings((current) => current.map((item) => item.BookingID === booking.BookingID ? { ...item, IsArchived: archived } : item));
+    setUpdatingId(null);
+  };
+
   const saveBookingServings = async (booking: BookingDisplay) => {
     if (booking.OrderType === 'meal_prep') return;
     const draft = servingDrafts[booking.BookingID] ?? Object.fromEntries(booking.items.flatMap((item) => item.bookingItemId ? [[item.bookingItemId, item.quantity]] : []));
@@ -439,6 +457,8 @@ export default function BookingsPage() {
   // BOOKING SECTIONS
   // ============================================================
 
+  const activeBookings = bookings.filter((booking) => !booking.IsArchived);
+  const archivedBookings = bookings.filter((booking) => booking.IsArchived);
   const bookingSections = [
     {
       key: 'catering' as const,
@@ -448,7 +468,7 @@ export default function BookingsPage() {
       icon: Utensils,
       bookings: bookings.filter(
         (booking) =>
-          booking.OrderType !== 'meal_prep'
+          !booking.IsArchived && booking.OrderType !== 'meal_prep'
       ),
     },
 
@@ -460,8 +480,15 @@ export default function BookingsPage() {
       icon: PackageCheck,
       bookings: bookings.filter(
         (booking) =>
-          booking.OrderType === 'meal_prep'
+          !booking.IsArchived && booking.OrderType === 'meal_prep'
       ),
+    },
+    {
+      key: 'archived' as const,
+      label: 'Archived',
+      description: 'Finished bookings and meal-prep orders kept for reference',
+      icon: PackageCheck,
+      bookings: archivedBookings,
     },
   ];
 
@@ -504,7 +531,7 @@ export default function BookingsPage() {
             {
               key: 'all' as const,
               label: 'All bookings',
-              count: bookings.length,
+              count: activeBookings.length,
             },
 
             {
@@ -521,6 +548,11 @@ export default function BookingsPage() {
               count:
                 bookingSections[1].bookings
                   .length,
+            },
+            {
+              key: 'archived' as const,
+              label: 'Archived',
+              count: archivedBookings.length,
             },
           ].map((tab) => (
             <Button
@@ -887,8 +919,11 @@ export default function BookingsPage() {
                                       ACTIONS
                                   ================================================== */}
 
-                                  {booking.Status?.toLowerCase() ===
-                                    'pending' && (
+                                  {booking.IsArchived ? (
+                                    <Button type="button" variant="outline" onClick={() => archiveItem(booking, false)} disabled={updatingId === booking.BookingID}>
+                                      {updatingId === booking.BookingID ? 'Restoring...' : 'Restore'}
+                                    </Button>
+                                  ) : booking.Status?.toLowerCase() === 'pending' ? (
                                     <div className="flex gap-3">
 
                                       {/* CONFIRM */}
@@ -955,7 +990,11 @@ onClick={() =>
                                       </Button>
 
                                     </div>
-                                  )}
+                                  ) : ['rejected', 'cancelled', 'prepared', 'completed'].includes(booking.Status?.toLowerCase() ?? '') || (booking.Status?.toLowerCase() === 'confirmed' && Boolean(booking.EventDate) && booking.EventDate! < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())) ? (
+                                    <Button type="button" variant="outline" onClick={() => archiveItem(booking, true)} disabled={updatingId === booking.BookingID}>
+                                      {updatingId === booking.BookingID ? 'Archiving...' : 'Archive'}
+                                    </Button>
+                                  ) : null}
 
                                 </div>
                               )}
