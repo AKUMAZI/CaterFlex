@@ -1,511 +1,68 @@
-'use client';
+'use client'
 
-import { DashboardLayout } from '@/app/dashboard-layout';
-import { Card } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { getCustomersByIds } from '@/app/actions/auth';
+import { useEffect, useMemo, useState } from 'react'
+import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react'
+import { DashboardLayout } from '@/app/dashboard-layout'
+import { Card } from '@/components/ui/card'
+import { getCustomersByIds } from '@/app/actions/auth'
+import { getOwnerCalendarMealPrep } from '@/app/actions/booking-actions'
+import { supabase } from '@/lib/supabase'
+import { expandMealPrepOrdersForMonth, statusLabel, type CalendarMealPrepOccurrence } from '@/lib/calendar-meal-prep'
 
-interface CalendarBooking {
-  BookingID: number;
-  CustomerID: number;
-  OperatorID: number;
-  EventDate: string;
-  EventTime: string;
-  Venue: string;
-  GuestCount: number;
-  Status: string;
-  EventType?: string;
-  customerName: string;
-}
+type Booking = { BookingID: number; CustomerID: number; EventDate: string; EventTime: string; Venue: string; GuestCount: number; Status: string; customerName: string }
 
-const OPERATOR_ID = 2;
+const OPERATOR_ID = 2
+const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function CalendarPage() {
-  const [bookings, setBookings] = useState<CalendarBooking[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [bookings, setBookings] = useState<Booking[]>([])
+  const [mealPrepOrders, setMealPrepOrders] = useState<CalendarMealPrepOccurrence[]>([])
+  const [loading, setLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [currentDate, setCurrentDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
 
-  // Start with the current month instead of hardcoded July 2026
-  const [currentDate, setCurrentDate] = useState(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-  );
-
-  /*
-   * ============================================================
-   * LOAD BOOKINGS FROM SUPABASE
-   * ============================================================
-   */
-  const loadBookings = async () => {
-    setLoading(true);
-    setErrorMessage('');
-
-    try {
-      /*
-       * Get catering bookings directly from BOOKING.
-       *
-       * EventDate here is the actual date stored in Supabase.
-       */
-      const {
-        data: bookingRows,
-        error: bookingError,
-      } = await supabase
-        .from('BOOKING')
-        .select(
-          `
-            BookingID,
-            CustomerID,
-            OperatorID,
-            EventDate,
-            EventTime,
-            Venue,
-            GuestCount,
-            Status
-          `
-        )
-        .eq('OperatorID', OPERATOR_ID)
-        .order('EventDate', { ascending: true });
-
-      if (bookingError) {
-        console.error('BOOKING loading error:', bookingError);
-        throw new Error(
-          `Failed to load bookings: ${bookingError.message}`
-        );
-      }
-
-      if (!bookingRows || bookingRows.length === 0) {
-        setBookings([]);
-        return;
-      }
-
-     /*
-      * Get the customers belonging to the bookings.
-      *
-      * CUSTOMER is protected by RLS, so we do not query it
-      * directly from the browser. Instead, use the owner-only
-      * server action that reads the customer records securely.
-      */
-      const customerIds = [
-        ...new Set(
-          bookingRows.map((booking) => booking.CustomerID)
-        ),
-      ];
-
-      const customerResult = await getCustomersByIds(customerIds);
-
-      if (!customerResult.ok) {
-        console.error(
-          'CUSTOMER loading error:',
-          customerResult.error
-        );
-
-        throw new Error(
-          `Failed to load customers: ${customerResult.error}`
-        );
-      }
-
-      const customerRows = customerResult.customers;
-
-      /*
-       * Match each booking with its customer.
-       */
-      const formattedBookings: CalendarBooking[] =
-        bookingRows.map((booking) => {
-          const customer = customerRows?.find(
-            (item) =>
-              item.CustomerID === booking.CustomerID
-          );
-
-          return {
-            BookingID: booking.BookingID,
-            CustomerID: booking.CustomerID,
-            OperatorID: booking.OperatorID,
-            EventDate: booking.EventDate,
-            EventTime: booking.EventTime,
-            Venue: booking.Venue,
-            GuestCount: booking.GuestCount,
-            Status: booking.Status,
-            customerName:
-              customer?.Name ??
-              `Customer #${booking.CustomerID}`,
-          };
-        });
-
-      console.log(
-        'CALENDAR BOOKINGS FROM SUPABASE:',
-        formattedBookings
-      );
-
-      setBookings(formattedBookings);
-    } catch (error) {
-      console.error(
-        'Unexpected calendar loading error:',
-        error
-      );
-
-      setBookings([]);
-
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : 'Failed to load bookings.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /*
-   * Load bookings when the calendar opens.
-   */
   useEffect(() => {
-    loadBookings();
-  }, []);
-
-  /*
-   * ============================================================
-   * CALENDAR NAVIGATION
-   * ============================================================
-   */
-
-  const goToPreviousMonth = () => {
-    setCurrentDate(
-      (date) =>
-        new Date(
-          date.getFullYear(),
-          date.getMonth() - 1,
-          1
-        )
-    );
-  };
-
-  const goToNextMonth = () => {
-    setCurrentDate(
-      (date) =>
-        new Date(
-          date.getFullYear(),
-          date.getMonth() + 1,
-          1
-        )
-    );
-  };
-
-  const goToToday = () => {
-    const today = new Date();
-
-    setCurrentDate(
-      new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        1
-      )
-    );
-  };
-
-  /*
-   * ============================================================
-   * CALENDAR HELPERS
-   * ============================================================
-   */
-
-  const getDaysInMonth = (date: Date) => {
-    return new Date(
-      date.getFullYear(),
-      date.getMonth() + 1,
-      0
-    ).getDate();
-  };
-
-  const getFirstDayOfMonth = (date: Date) => {
-    return new Date(
-      date.getFullYear(),
-      date.getMonth(),
-      1
-    ).getDay();
-  };
-
-  /*
-   * IMPORTANT:
-   *
-   * EventDate is a DATE value from PostgreSQL.
-   * We compare the YYYY-MM-DD string directly instead
-   * of relying on JavaScript timezone conversion.
-   */
-  const getBookingsForDate = (day: number) => {
-    const year = currentDate.getFullYear();
-    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
-    const dayString = String(day).padStart(2, '0');
-  
-    const calendarDate = `${year}-${month}-${dayString}`;
-  
-    return bookings.filter((booking) => {
-      const bookingDate = String(booking.EventDate).split('T')[0];
-      return bookingDate === calendarDate;
-    });
-  };
-
-  const days = getDaysInMonth(currentDate);
-  const firstDay = getFirstDayOfMonth(currentDate);
-
-  const monthName = currentDate.toLocaleString(
-    'default',
-    {
-      month: 'long',
-      year: 'numeric',
+    async function load() {
+      setLoading(true)
+      try {
+        const [{ data, error }, mealPrep] = await Promise.all([
+          supabase.from('BOOKING').select('BookingID, CustomerID, EventDate, EventTime, Venue, GuestCount, Status').eq('OperatorID', OPERATOR_ID).order('EventDate'),
+          getOwnerCalendarMealPrep(),
+        ])
+        if (error) throw error
+        const customerIds = [...new Set((data ?? []).map((item) => item.CustomerID))]
+        const customers = await getCustomersByIds(customerIds)
+        if (!customers.ok) throw new Error(customers.error)
+        const names = new Map((customers.customers ?? []).map((item) => [item.CustomerID, item.Name]))
+        setBookings((data ?? []).map((item) => ({ ...item, customerName: names.get(item.CustomerID) ?? `Customer #${item.CustomerID}` })))
+        if (!mealPrep.ok) throw new Error(mealPrep.error)
+        setMealPrepOrders(expandMealPrepOrdersForMonth(mealPrep.orders, currentDate.getFullYear(), currentDate.getMonth() + 1))
+        setErrorMessage('')
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to load calendar.')
+      } finally { setLoading(false) }
     }
-  );
+    load()
+  }, [currentDate])
 
-  const dayLabels = [
-    'Sun',
-    'Mon',
-    'Tue',
-    'Wed',
-    'Thu',
-    'Fri',
-    'Sat',
-  ];
+  const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+  const days = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate()
+  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay()
+  const today = new Date().toISOString().slice(0, 10)
+  const upcoming = useMemo(() => bookings.filter((b) => b.EventDate.slice(0, 10) >= today).sort((a, b) => a.EventDate.localeCompare(b.EventDate)).slice(0, 5), [bookings, today])
+  const dateForDay = (day: number) => `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  const bookingsFor = (date: string) => bookings.filter((b) => b.EventDate.slice(0, 10) === date)
+  const mealsFor = (date: string) => mealPrepOrders.filter((o) => o.fulfillmentDate === date)
+  const statusClass = (status: string) => status === 'active' || status === 'confirmed' ? 'bg-green-100 text-green-800' : status === 'paused' ? 'bg-muted text-muted-foreground' : 'bg-yellow-100 text-yellow-800'
 
-  /*
-   * ============================================================
-   * UPCOMING EVENTS
-   * ============================================================
-   */
-
-  const todayString = new Date()
-    .toISOString()
-    .split('T')[0];
-
-    const upcomingBookings = bookings
-    .filter((booking) => {
-      const bookingDate = String(booking.EventDate).split('T')[0];
-      return bookingDate >= todayString;
-    })
-    .sort(
-      (a, b) =>
-        a.EventDate.localeCompare(b.EventDate)
-    )
-    .slice(0, 5);
-
-  return (
-    <DashboardLayout>
-      <div className="space-y-8">
-
-        {/* PAGE HEADER */}
-        <div>
-          <h1 className="font-heading text-3xl font-bold text-surface-foreground">
-            Calendar
-          </h1>
-
-          <p className="text-surface-muted-foreground mt-2">
-            View all events scheduled for {monthName}
-          </p>
-        </div>
-
-        {/* ERROR */}
-        {errorMessage && (
-          <Card className="p-4 border-red-300 bg-red-50">
-            <p className="text-sm text-red-700">
-              {errorMessage}
-            </p>
-          </Card>
-        )}
-
-        {/* CALENDAR */}
-        <Card className="p-8">
-
-          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-
-            <h2 className="font-heading text-2xl font-bold text-card-foreground">
-              {monthName}
-            </h2>
-
-            <div className="flex items-center gap-2">
-
-              <button
-                type="button"
-                onClick={goToPreviousMonth}
-                aria-label="View previous month"
-                className="rounded-md border border-border p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <ChevronLeft className="size-5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={goToToday}
-                className="rounded-md border border-border px-3 py-2 text-sm font-medium text-card-foreground transition-colors hover:bg-muted"
-              >
-                Today
-              </button>
-
-              <button
-                type="button"
-                onClick={goToNextMonth}
-                aria-label="View next month"
-                className="rounded-md border border-border p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <ChevronRight className="size-5" />
-              </button>
-
-              <Calendar className="ml-2 size-6 text-primary" />
-
-            </div>
-          </div>
-
-          {/* LOADING */}
-          {loading ? (
-            <div className="py-12 text-center text-muted-foreground">
-              Loading bookings...
-            </div>
-          ) : (
-            <>
-              {/* DAY LABELS */}
-              <div className="grid grid-cols-7 gap-2 mb-4">
-                {dayLabels.map((day) => (
-                  <div
-                    key={day}
-                    className="text-center font-semibold text-muted-foreground py-2"
-                  >
-                    {day}
-                  </div>
-                ))}
-              </div>
-
-              {/* CALENDAR GRID */}
-              <div className="grid grid-cols-7 gap-2">
-
-                {/* EMPTY CELLS */}
-                {Array.from({
-                  length: firstDay,
-                }).map((_, i) => (
-                  <div
-                    key={`empty-${i}`}
-                    className="aspect-square"
-                  />
-                ))}
-
-                {/* DAYS */}
-                {Array.from({
-                  length: days,
-                }).map((_, i) => {
-
-                  const day = i + 1;
-
-                  const dayBookings =
-                    getBookingsForDate(day);
-
-                  return (
-                    <div
-                      key={day}
-                      className="aspect-square p-2 border border-border rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-
-                      <div className="text-sm font-medium text-card-foreground mb-1">
-                        {day}
-                      </div>
-
-                      <div className="space-y-1">
-
-                        {dayBookings
-                          .slice(0, 2)
-                          .map((booking) => (
-                            <div
-                              key={booking.BookingID}
-                              className="text-xs bg-primary/20 text-primary px-1 py-0.5 rounded truncate"
-                              title={`${booking.customerName} - ${booking.Status}`}
-                            >
-                              {booking.customerName}
-                            </div>
-                          ))}
-
-                        {dayBookings.length > 2 && (
-                          <div className="text-xs text-muted-foreground">
-                            +{dayBookings.length - 2} more
-                          </div>
-                        )}
-
-                      </div>
-                    </div>
-                  );
-                })}
-
-              </div>
-            </>
-          )}
-
-        </Card>
-
-        {/* UPCOMING EVENTS */}
-        <Card className="p-8">
-
-          <h2 className="font-heading text-lg font-bold text-card-foreground mb-6">
-            Upcoming Events
-          </h2>
-
-          {loading ? (
-            <p className="text-sm text-muted-foreground">
-              Loading upcoming events...
-            </p>
-          ) : upcomingBookings.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No upcoming events.
-            </p>
-          ) : (
-            <div className="space-y-3">
-
-              {upcomingBookings.map((booking) => (
-                <div
-                  key={booking.BookingID}
-                  className="flex justify-between items-center p-4 bg-muted/50 rounded-lg"
-                >
-
-                  <div>
-                    <p className="font-medium text-card-foreground">
-                      {booking.customerName}
-                    </p>
-
-                    <p className="text-sm text-muted-foreground">
-                      {booking.EventTime}
-                      {' • '}
-                      {booking.GuestCount} guests
-                    </p>
-
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {booking.Venue}
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-
-                    <p className="text-sm font-medium text-card-foreground">
-                      {new Date(
-                        `${booking.EventDate}T12:00:00`
-                      ).toLocaleDateString()}
-                    </p>
-
-                    <span
-                      className={`inline-block text-xs font-medium mt-1 px-2 py-1 rounded-full ${
-                        booking.Status === 'confirmed'
-                          ? 'bg-green-100 text-green-800'
-                          : booking.Status === 'rejected'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {booking.Status}
-                    </span>
-
-                  </div>
-                </div>
-              ))}
-
-            </div>
-          )}
-
-        </Card>
-
-      </div>
-    </DashboardLayout>
-  );
+  return <DashboardLayout><div className="flex flex-col gap-8">
+    <header><h1 className="font-heading text-3xl font-bold text-surface-foreground">Calendar</h1><p className="mt-2 text-surface-muted-foreground">View all events scheduled for {monthName}</p></header>
+    {errorMessage && <Card className="border-red-300 bg-red-50 p-4"><p className="text-sm text-red-700">{errorMessage}</p></Card>}
+    <Card className="p-8">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4"><h2 className="font-heading text-2xl font-bold text-card-foreground">{monthName}</h2><div className="flex items-center gap-2"><button type="button" aria-label="View previous month" onClick={() => setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))} className="rounded-md border p-2"><ChevronLeft /></button><button type="button" onClick={() => { const d = new Date(); setCurrentDate(new Date(d.getFullYear(), d.getMonth(), 1)) }} className="rounded-md border px-3 py-2 text-sm">Today</button><button type="button" aria-label="View next month" onClick={() => setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))} className="rounded-md border p-2"><ChevronRight /></button><Calendar className="ml-2 text-primary" /></div></div>
+      <div className="mb-5 flex flex-wrap gap-4 text-xs"><span><i className="mr-1 inline-block size-2 rounded-full bg-primary" />Catering</span><span><i className="mr-1 inline-block size-2 rounded-full bg-teal-600" />Meal prep</span><span><i className="mr-1 inline-block size-2 rounded-full border border-dashed border-yellow-600" />Pending</span></div>
+      {loading ? <p className="py-12 text-center text-muted-foreground">Loading bookings...</p> : <><div className="mb-3 grid grid-cols-7 gap-2">{dayLabels.map((d) => <div key={d} className="py-2 text-center font-semibold text-muted-foreground">{d}</div>)}</div><div className="grid grid-cols-7 gap-2">{Array.from({ length: firstDay }, (_, i) => <div key={`empty-${i}`} className="aspect-square" />)}{Array.from({ length: days }, (_, i) => { const date = dateForDay(i + 1); const items = [...bookingsFor(date).map((b) => ({ kind: 'catering' as const, label: b.customerName, status: b.Status, id: b.BookingID })), ...mealsFor(date).map((o) => ({ kind: 'meal' as const, label: o.customerName, status: o.status, id: o.id }))]; return <div key={date} className="min-h-28 rounded-lg border p-2"><div className="mb-1 text-sm font-medium">{i + 1}</div><div className="flex flex-col gap-1">{items.slice(0, 3).map((item, index) => <div key={`${item.kind}-${item.id}-${index}`} title={`${item.label} - ${statusLabel(item.status)}`} className={`truncate rounded px-1 py-0.5 text-xs ${item.kind === 'meal' ? `border border-teal-600/50 bg-teal-100 text-teal-800 ${item.status === 'pending' ? 'border-dashed' : item.status === 'paused' ? 'opacity-60' : ''}` : 'bg-primary/20 text-primary'}`}>{item.kind === 'meal' ? 'MP ' : ''}{item.label}</div>)}{items.length > 3 && <div className="text-xs text-muted-foreground">+{items.length - 3} more</div>}</div></div>})}</div></>}
+    </Card>
+    <Card className="p-8"><h2 className="mb-6 font-heading text-lg font-bold">Upcoming Events</h2>{loading ? <p className="text-sm text-muted-foreground">Loading upcoming events...</p> : <div className="flex flex-col gap-3">{[...upcoming.map((b) => ({ id: `b-${b.BookingID}`, name: b.customerName, date: b.EventDate, detail: `${b.EventTime} • ${b.GuestCount} guests`, venue: b.Venue, status: b.Status, label: 'Catering' })), ...mealPrepOrders.filter((o) => o.fulfillmentDate >= today).slice(0, 5).map((o) => ({ id: `m-${o.id}-${o.fulfillmentDate}`, name: o.customerName, date: o.fulfillmentDate, detail: `${o.mealsPerCycle} meals per cycle`, venue: '', status: o.status, label: 'Meal prep' }))].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5).map((item) => <div key={item.id} className="flex items-center justify-between rounded-lg bg-muted/50 p-4"><div><p className="font-medium">{item.name}</p><p className="text-sm text-muted-foreground">{item.label} • {item.detail}</p>{item.venue && <p className="mt-1 text-xs text-muted-foreground">{item.venue}</p>}</div><div className="text-right"><p className="text-sm font-medium">{new Date(`${item.date}T12:00:00Z`).toLocaleDateString()}</p><span className={`mt-1 inline-block rounded-full px-2 py-1 text-xs font-medium ${statusClass(item.status)}`}>{statusLabel(item.status)}</span></div></div>)}</div>}</Card>
+  </div></DashboardLayout>
 }
