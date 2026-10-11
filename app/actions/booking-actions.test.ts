@@ -3,11 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const requireRole = vi.fn()
 const createAdminClient = vi.fn()
 const createNotification = vi.fn()
+const validateBooking = vi.fn((): { valid: boolean; errors: string[]; failures: { message: string }[] } => ({ valid: true, errors: [], failures: [] }))
 vi.mock('@/app/actions/auth', () => ({ requireRole }))
 vi.mock('@/lib/supabase-admin', () => ({ createAdminClient }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/notifications', () => ({ createNotification }))
-vi.mock('@/lib/rules/bookingValidation', () => ({ validateBooking: vi.fn(() => ({ valid: true, errors: [] })) }))
+vi.mock('@/lib/rules/bookingValidation', () => ({ validateBooking }))
 vi.mock('@/lib/rules/allocation', () => ({
   computeBookingTotal: vi.fn(() => 0),
   servingsForBookingItem: vi.fn((value: number | null, guests: number) => value ?? guests),
@@ -27,6 +28,38 @@ async function loadAction() {
   vi.resetModules()
   return import('./booking-actions')
 }
+
+describe('createMealPrepOrder capacity', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    requireRole.mockResolvedValue({ id: 42, role: 'customer' })
+  })
+
+  it('blocks a third active order at the daily limit and notifies the owner', async () => {
+    const activeStatusFilter = vi.fn()
+    const prepQuery = (result: { data?: unknown; error?: { message: string } | null }) => {
+      const q = {
+        select: vi.fn(() => q), eq: vi.fn(() => q), in: activeStatusFilter,
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(result)),
+      }
+      return q
+    }
+    activeStatusFilter.mockReturnValue(prepQuery({ data: [
+      { MealPrepOrderID: 1, CustomerID: 10, NextFulfillmentDate: '2099-01-01', MealsPerCycle: 1, Status: 'active' },
+      { MealPrepOrderID: 2, CustomerID: 11, NextFulfillmentDate: '2099-01-01', MealsPerCycle: 1, Status: 'active' },
+    ], error: null }))
+    createAdminClient.mockReturnValue({ from: vi.fn((table: string) => {
+      if (table === 'CUSTOMER_ALLERGY' || table === 'MENU_ITEM_ALLERGY' || table === 'ALLERGY_TAG') return prepQuery({ data: [], error: null })
+      if (table === 'OPERATOR_SETTINGS') return prepQuery({ data: [{ DayOfWeek: 4, OperatingStartTime: '09:00', OperatingEndTime: '17:00', MaxCateringEventsPerDay: 10, MaxMealPrepOrdersPerDay: 2, MaxGuestCountPerEvent: 100 }], error: null })
+      return prepQuery({ data: [], error: null })
+    }) })
+    validateBooking.mockReturnValue({ valid: false, errors: [], failures: [{ message: 'Maximum meal-prep orders reached for this day.' }] })
+    const { createMealPrepOrder } = await loadAction()
+    await expect(createMealPrepOrder({ eventDate: '2099-01-01', guestCount: 1 }, [{ MenuItemID: 5 }])).resolves.toMatchObject({ ok: false })
+    expect(activeStatusFilter).toHaveBeenCalledWith('Status', ['pending', 'active'])
+    expect(createNotification).toHaveBeenCalledWith(2, 'capacity_conflict', expect.stringContaining('Maximum meal-prep orders reached'))
+  })
+})
 
 describe('updateBookingItemServings', () => {
   beforeEach(() => {
@@ -75,26 +108,3 @@ describe('updateBookingItemServings', () => {
   })
 })
 
-describe('status notifications', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('notifies the customer after rejecting a booking', async () => {
-    requireRole.mockResolvedValue({ id: 7, role: 'owner' })
-    const update = vi.fn(() => Object.assign(query({ data: null, error: null }), { then: (resolve: (value: unknown) => unknown) => Promise.resolve(resolve({ error: null })) }))
-    createAdminClient.mockReturnValue({ from: vi.fn(() => Object.assign(query({ data: { BookingID: 10, CustomerID: 42, OperatorID: 7 }, error: null }), { update })) })
-    const { updateBookingStatus } = await loadAction()
-    await expect(updateBookingStatus(10, 'rejected')).resolves.toMatchObject({ ok: true })
-    expect(createNotification).toHaveBeenCalledWith(42, 'booking_status_changed', 'Your booking has been rejected.', { bookingId: 10 })
-  })
-
-  it('notifies the customer after rejecting a meal-prep order', async () => {
-    requireRole.mockResolvedValue({ id: 7, role: 'owner' })
-    const update = vi.fn(() => query({ data: null, error: null }))
-    createAdminClient.mockReturnValue({ from: vi.fn(() => Object.assign(query({ data: { MealPrepOrderID: 11, CustomerID: 42, OperatorID: 7 }, error: null }), { update })) })
-    const { updateMealPrepOrderStatus } = await loadAction()
-    await expect(updateMealPrepOrderStatus(11, 'rejected')).resolves.toMatchObject({ ok: true })
-    expect(createNotification).toHaveBeenCalledWith(42, 'meal_prep_order_status_changed', 'Your meal-prep order has been rejected.', { mealPrepOrderId: 11 })
-  })
-})

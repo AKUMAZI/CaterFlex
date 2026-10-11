@@ -96,7 +96,7 @@ export async function createMealPrepOrder(orderDetails: MealPrepOrderDetails, it
       .select('MealPrepOrderID, CustomerID, OperatorID, NextFulfillmentDate, MealsPerCycle, Status')
       .eq('OperatorID', operatorId)
       .eq('NextFulfillmentDate', eventDate)
-      .in('Status', ['pending', 'confirmed']),
+.in('Status', ['pending', 'active']),
   ])
   if (settingsError) return { ok: false as const, error: settingsError.message }
   if (existingMealPrepError) return { ok: false as const, error: existingMealPrepError.message }
@@ -540,7 +540,7 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
   if (!owner) return { ok: false as const, error: 'Owner access required.' }
 
   const admin = createAdminClient()
-  const { data: booking, error: fetchError } = await admin.from('BOOKING').select('BookingID, CustomerID, OperatorID').eq('BookingID', bookingId).maybeSingle()
+  const { data: booking, error: fetchError } = await admin.from('BOOKING').select('BookingID, OperatorID').eq('BookingID', bookingId).maybeSingle()
   if (fetchError) return { ok: false as const, error: fetchError.message }
   if (!booking || booking.OperatorID !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this booking.' }
 
@@ -582,7 +582,6 @@ export async function updateBookingStatus(bookingId: number, newStatus: 'confirm
 
   const { error } = await admin.from('BOOKING').update({ Status: newStatus }).eq('BookingID', bookingId)
   if (error) return { ok: false as const, error: error.message }
-  await createNotification(Number(booking.CustomerID), 'booking_status_changed', `Your booking has been ${newStatus}.`, { bookingId })
   return { ok: true as const }
 }
 
@@ -631,7 +630,7 @@ export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStat
   const admin = createAdminClient()
   const { data: mealPrepOrder, error: fetchError } = await admin
     .from('MEAL_PREP_ORDER')
-    .select('MealPrepOrderID, CustomerID, OperatorID')
+    .select('MealPrepOrderID, OperatorID')
     .eq('MealPrepOrderID', mealPrepOrderId)
     .maybeSingle()
   if (fetchError) return { ok: false as const, error: fetchError.message }
@@ -644,6 +643,5 @@ export async function updateMealPrepOrderStatus(mealPrepOrderId: number, newStat
     .update({ Status: newStatus })
     .eq('MealPrepOrderID', mealPrepOrderId)
   if (error) return { ok: false as const, error: error.message }
-  await createNotification(Number(mealPrepOrder.CustomerID), 'meal_prep_order_status_changed', `Your meal-prep order has been ${newStatus}.`, { mealPrepOrderId })
   return { ok: true as const }
 }
