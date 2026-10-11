@@ -570,8 +570,7 @@ export default function MacroFlexPage() {
                                               <Badge variant="secondary" className="mt-2">
                                                 Uses {suggestion.usesMissingIngredient.join(', ')}
                                               </Badge>
-                                            ) : null
-                                            </p>
+                                            ) : null}
                                           </div>
                                         )
                                       )}
