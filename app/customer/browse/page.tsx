@@ -756,7 +756,7 @@ export default function BrowsePage() {
                 onClick={() => {
                   setShowBookingSuccess(false);
                   clearCustomerSession();
-                  router.push('/customer/inquiry');
+                  router.push('/customer/status');
                 }}
               >
                 Continue
