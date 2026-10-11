@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+import { paginate } from '@/lib/pagination'
+
 import {
   AlertTriangle,
   CheckCircle2,
@@ -60,6 +63,17 @@ export default function MacroFlexPage() {
   const [expandedItems, setExpandedItems] = useState<Set<number>>(
     new Set()
   )
+  const [suggestionPages, setSuggestionPages] = useState<Record<number, number>>({})
+
+  useEffect(() => {
+    setSuggestionPages((current) => {
+      const next: Record<number, number> = {}
+      for (const item of menuItems) {
+        next[item.menuItemId] = current[item.menuItemId] ?? 1
+      }
+      return next
+    })
+  }, [menuItems])
 
   useEffect(() => {
     async function loadMacroFlexData() {
@@ -198,8 +212,10 @@ export default function MacroFlexPage() {
 
       if (next.has(menuItemId)) {
         next.delete(menuItemId)
+        setSuggestionPages((pages) => ({ ...pages, [menuItemId]: 1 }))
       } else {
         next.add(menuItemId)
+        setSuggestionPages((pages) => ({ ...pages, [menuItemId]: 1 }))
       }
 
       return next
@@ -344,6 +360,11 @@ export default function MacroFlexPage() {
                         const hasDetails =
                           item.shortfalls.length > 0 ||
                           item.suggestions.length > 0
+                        const suggestionPagination = paginate(
+                          item.suggestions,
+                          suggestionPages[item.menuItemId] ?? 1,
+                          3
+                        )
 
                         return (
                           <div
@@ -530,36 +551,62 @@ export default function MacroFlexPage() {
 
                                     <div className="space-y-2">
 
-                                      {item.suggestions.map(
-                                        (
-                                          suggestion
-                                        ) => (
+                                      {suggestionPagination.items.map(
+                                        (suggestion) => (
                                           <div
-                                            key={
-                                              suggestion.menuItemId
-                                            }
+                                            key={suggestion.menuItemId}
                                             className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"
                                           >
                                             <p className="font-medium text-emerald-900">
-                                              {
-                                                suggestion.itemName
-                                              }
+                                              {suggestion.itemName}
                                             </p>
 
                                             <p className="mt-1 text-xs text-emerald-700">
-                                              {
-                                                suggestion.category
-                                              }{' '}
+                                              {suggestion.category}{' '}
                                               ·{' '}
-                                              {formatPrice(
-                                                suggestion.price
-                                              )}
+                                              {formatPrice(suggestion.price)}
                                             </p>
                                           </div>
                                         )
                                       )}
 
                                     </div>
+
+                                    {suggestionPagination.totalPages > 1 && (
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          disabled={suggestionPagination.page === 1}
+                                          onClick={() =>
+                                            setSuggestionPages((pages) => ({
+                                              ...pages,
+                                              [item.menuItemId]: suggestionPagination.page - 1,
+                                            }))
+                                          }
+                                        >
+                                          Previous
+                                        </Button>
+                                        <span className="text-xs text-muted-foreground">
+                                          Page {suggestionPagination.page} of {suggestionPagination.totalPages}
+                                        </span>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          disabled={suggestionPagination.page === suggestionPagination.totalPages}
+                                          onClick={() =>
+                                            setSuggestionPages((pages) => ({
+                                              ...pages,
+                                              [item.menuItemId]: suggestionPagination.page + 1,
+                                            }))
+                                          }
+                                        >
+                                          Next
+                                        </Button>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
 
