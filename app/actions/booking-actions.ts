@@ -388,6 +388,43 @@ const { data: booking, error } = await admin
   return { ok: true as const, bookingId: booking.BookingID }
 }
 
+export async function getOwnerCalendarMealPrep() {
+  const owner = await requireRole('owner')
+  if (!owner) return { ok: false as const, error: 'Owner access required.', orders: [] }
+
+  const admin = createAdminClient()
+  const operatorId = Number(owner.id)
+  const { data: orders, error } = await admin
+    .from('MEAL_PREP_ORDER')
+    .select('MealPrepOrderID, CustomerID, OperatorID, Status, NextFulfillmentDate, RecurrencePattern, MealsPerCycle, IsArchived')
+    .eq('OperatorID', operatorId)
+    .in('Status', ['pending', 'active', 'paused'])
+    .or('IsArchived.is.null,IsArchived.eq.false')
+    .order('NextFulfillmentDate', { ascending: true })
+
+  if (error) return { ok: false as const, error: error.message, orders: [] }
+
+  const customerIds = [...new Set((orders ?? []).map((order) => Number(order.CustomerID)))]
+  const { data: customers, error: customerError } = customerIds.length > 0
+    ? await admin.from('CUSTOMER').select('CustomerID, Name').in('CustomerID', customerIds)
+    : { data: [], error: null }
+  if (customerError) return { ok: false as const, error: customerError.message, orders: [] }
+
+  const names = new Map((customers ?? []).map((customer) => [Number(customer.CustomerID), String(customer.Name)]))
+  return {
+    ok: true as const,
+    orders: (orders ?? []).map((order) => ({
+      id: Number(order.MealPrepOrderID),
+      customerName: names.get(Number(order.CustomerID)) ?? `Customer #${order.CustomerID}`,
+      status: String(order.Status),
+      nextFulfillmentDate: String(order.NextFulfillmentDate).slice(0, 10),
+      recurrencePattern: String(order.RecurrencePattern ?? 'weekly'),
+      mealsPerCycle: Number(order.MealsPerCycle),
+      isArchived: Boolean(order.IsArchived),
+    })),
+  }
+}
+
 export async function getOwnerBookings() {
   const owner = await requireRole('owner')
   if (!owner) return { ok: false as const, error: 'Owner access required.', bookings: [], bookingItems: [], mealPrepOrders: [], mealPrepItems: [] }
