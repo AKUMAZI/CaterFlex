@@ -926,11 +926,9 @@ export default function InventoryPage() {
                         key={ingredient.id}
                       >
                         {ingredient.name}:{' '}
-                        {ingredient.currentStock}
-                        {ingredient.unit} exceeds
+                        {formatQuantity(ingredient.currentStock, ingredient.unit)} exceeds
                         max storage of{' '}
-                        {ingredient.maxCapacity}
-                        {ingredient.unit}
+                        {formatQuantity(ingredient.maxCapacity, ingredient.unit)}
                       </li>
                     )
                   )}
@@ -1109,7 +1107,7 @@ export default function InventoryPage() {
                 {/* QUANTITY */}
 
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-card-foreground">
-                  Quantity
+                  Quantity ({formUnit})
 
                   <input
                     type="number"
@@ -1301,15 +1299,18 @@ export default function InventoryPage() {
                             <td className="p-6 text-card-foreground">
                               {editingId === ingredient.id ? (
                                 <div className="flex items-center gap-2">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    value={editValue}
+                                  <label className="flex items-center gap-2">
+                                    <span className="sr-only">Stock in {ingredient.unit}</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={editValue}
                                     onChange={(e) => setEditValue(e.target.value)}
                                     className="w-28 px-2 py-1 border border-border rounded"
                                     disabled={isSaving}
-                                  />
+                                    />
+                                  </label>
 
                                   <button
                                     type="button"
@@ -1335,8 +1336,7 @@ export default function InventoryPage() {
                               ) : (
                                 <div className="flex items-center gap-3">
                                   <span>
-                                    {ingredient.currentStock}
-                                    {ingredient.unit}
+                                    {formatQuantity(ingredient.currentStock, ingredient.unit)}
                                   </span>
 
                                   <button
@@ -1368,10 +1368,7 @@ export default function InventoryPage() {
 
                           {/* CAPACITY */}
                           <td className="p-6 text-muted-foreground">
-                            {
-                              ingredient.maxCapacity
-                            }
-                            {ingredient.unit}
+                            {formatQuantity(ingredient.maxCapacity, ingredient.unit)}
                           </td>
 
                           {/* USAGE */}
