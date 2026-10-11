@@ -629,8 +629,17 @@ async function setArchiveState(kind: 'booking' | 'meal_prep', id: number, archiv
   const admin = createAdminClient()
   const table = kind === 'booking' ? 'BOOKING' : 'MEAL_PREP_ORDER'
   const idColumn = kind === 'booking' ? 'BookingID' : 'MealPrepOrderID'
-  const { data: row, error: fetchError } = await admin.from(table).select(`${idColumn}, OperatorID, Status, EventDate, IsArchived`).eq(idColumn, id).maybeSingle()
+  const archiveFields = kind === 'booking'
+    ? `${idColumn}, OperatorID, Status, EventDate, IsArchived`
+    : `${idColumn}, OperatorID, Status, IsArchived`
+  const { data: rawRow, error: fetchError } = await admin.from(table).select(archiveFields).eq(idColumn, id).maybeSingle()
   if (fetchError) return { ok: false as const, error: fetchError.message }
+  const row = rawRow as {
+    OperatorID: number | string
+    Status: string | null
+    EventDate?: string | null
+    IsArchived: boolean | null
+  } | null
   if (!row || Number(row.OperatorID) !== Number(owner.id)) return { ok: false as const, error: 'You are not authorized to update this order.' }
   if (archived && !row.IsArchived) {
     const status = String(row.Status ?? '').toLowerCase()
