@@ -4,6 +4,7 @@ import { checkOrderSufficiencyWithAllocations } from '@/lib/macroflex'
 import { createNotification, hasNotificationForToday } from '@/lib/notifications'
 import { addDays, orderPrepWindow, servingsForBookingItem, servingsForOrder } from '@/lib/rules/allocation'
 import { formatQuantity } from '@/lib/rules/quantity-format'
+import { logSystemError } from '@/lib/system-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +17,7 @@ function prepStartDate(eventDate: string, prepDays: number): string {
 }
 
 export async function GET(request: NextRequest) {
+  try {
   const secret = process.env.CRON_SECRET
   const authorization = request.headers.get('authorization')
   if (!secret || authorization !== `Bearer ${secret}`) {
@@ -115,4 +117,8 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, checked, notified, mealPrepChecked, mealPrepNotified })
+  } catch (error) {
+    await logSystemError('check-prep-sufficiency', error)
+    return NextResponse.json({ error: 'Daily preparation check failed.' }, { status: 500 })
+  }
 }

@@ -10,13 +10,14 @@ export default function AdminDashboard() {
   const [health, setHealth] = useState<SystemHealth | null>(null)
 
   useEffect(() => {
-    getSystemHealth().then(setHealth).catch(() => setHealth({ database: 'disconnected', lastDeployment: null, lastBackup: null }))
+    getSystemHealth().then(setHealth).catch(() => setHealth({ database: 'disconnected', lastDeployment: null, uptime: 'No deployment recorded', lastBackup: null }))
   }, [])
 
   return <AdminShell>
     <header className="mb-8"><p className="text-sm font-medium text-primary">System control</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Dashboard</h2><p className="mt-2 text-muted-foreground">Monitor deployment and backup activity without exposing business data.</p></header>
-    <section aria-label="System health" className="grid gap-4 md:grid-cols-3">
+    <section aria-label="System health" className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <Card className="p-5"><p className="text-sm text-muted-foreground">Database</p><p className="mt-2 text-2xl font-semibold capitalize">{health?.database ?? 'Checking…'}</p></Card>
+      <Card className="p-5"><p className="text-sm text-muted-foreground">Uptime</p><p className="mt-2 text-lg font-semibold">{health?.uptime ?? 'Checking…'}</p></Card>
       <Card className="p-5"><p className="text-sm text-muted-foreground">Last deployment</p><p className="mt-2 text-lg font-semibold">{formatDate(health?.lastDeployment ?? null)}</p></Card>
       <Card className="p-5"><p className="text-sm text-muted-foreground">Last backup</p><p className="mt-2 text-lg font-semibold">{formatDate(health?.lastBackup ?? null)}</p></Card>
     </section>

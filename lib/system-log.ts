@@ -1,21 +1,20 @@
 import { createAdminClient } from '@/lib/supabase-admin'
 
-const MAX_MESSAGE_LENGTH = 500
-
-function safeErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
-  return message
-    .replace(/(password|token|secret|api[_ -]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]')
-    .replace(/\bBearer\s+[^\s]+/gi, 'Bearer [redacted]')
-    .slice(0, MAX_MESSAGE_LENGTH)
+export function formatUptime(since: string | null, now = new Date()): string {
+  if (!since) return 'No deployment recorded'
+  const elapsed = Math.max(0, now.getTime() - new Date(since).getTime())
+  const days = Math.floor(elapsed / 86400000)
+  const hours = Math.floor((elapsed % 86400000) / 3600000)
+  return `${days} day${days === 1 ? '' : 's'} ${hours} hour${hours === 1 ? '' : 's'} since last deployment`
 }
 
 export async function logSystemError(source: string, error: unknown): Promise<void> {
   try {
+    const message = error instanceof Error ? error.message : String(error)
     await createAdminClient().from('SYSTEM_LOG').insert({
       AdminID: null,
       LogType: 'error',
-      Message: `[${source}] ${safeErrorMessage(error)}`.slice(0, MAX_MESSAGE_LENGTH),
+      Message: `[${source}] ${message}`.slice(0, 500),
       Timestamp: new Date().toISOString(),
     })
   } catch {
@@ -23,11 +22,6 @@ export async function logSystemError(source: string, error: unknown): Promise<vo
   }
 }
 
-export function formatUptime(timestamp: string | null, now = new Date()): string {
-  if (!timestamp) return 'No deployment recorded'
-  const elapsedMs = Math.max(0, now.getTime() - new Date(timestamp).getTime())
-  const totalHours = Math.floor(elapsedMs / (1000 * 60 * 60))
-  const days = Math.floor(totalHours / 24)
-  const hours = totalHours % 24
-  return `${days} days ${hours} hours since last deployment`
+export function formatUptimeForTest(since: string | null, now = new Date()) {
+  return formatUptime(since, now)
 }

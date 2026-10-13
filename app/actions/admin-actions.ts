@@ -2,6 +2,7 @@
 
 import { getSupabaseServer } from '@/lib/auth-server'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { formatUptime, logSystemError } from '@/lib/system-log'
 
 const PAGE_SIZE = 25
 
@@ -87,6 +88,7 @@ export async function getSystemHealth() {
   return {
     database: error ? 'disconnected' : 'connected',
     lastDeployment: await getLatestLog(admin, 'deployment'),
+    uptime: formatUptime(await getLatestLog(admin, 'deployment')),
     lastBackup: await getLatestLog(admin, 'backup'),
   }
 }
@@ -115,6 +117,7 @@ export async function triggerDeploy() {
     await writeLog('deployment', message)
     return { ok: response.ok, error: response.ok ? undefined : message }
   } catch (error) {
+    await logSystemError('triggerDeploy', error)
     const message = error instanceof Error ? error.message : 'Unknown deploy error.'
     await writeLog('deployment', `Deploy hook error: ${message}`)
     return { ok: false, error: message }
