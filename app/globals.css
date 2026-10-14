@@ -276,7 +276,6 @@
 
   .marquee-row-viewport {
     overflow: hidden;
-    mask-image: linear-gradient(to right, #fde6e6 0%, transparent 7%, black 15%, black 85%, transparent 93%, #fde6e6 100%);
   }
 
 .marquee-left,

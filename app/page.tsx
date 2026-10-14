@@ -31,8 +31,7 @@ function PhotoCard({ photo, duplicate = false, index, spacing = 'horizontal' }: 
 
 function Marquee() {
   const secondRow = [...photos.slice(3), ...photos.slice(0, 3)]
-  return <div className="pointer-events-none absolute right-0 top-0 z-0 flex h-full w-full flex-col justify-center gap-4 overflow-hidden md:w-[40%]" aria-hidden="true">
-    <div className="absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-[#FDE6E6] to-transparent" />
+  return <div className="pointer-events-none absolute -right-8 top-0 z-0 flex h-full w-full flex-col justify-center gap-4 overflow-hidden md:w-[42%]" aria-hidden="true">
     <div className="marquee-row-viewport">
       <div className="marquee-left flex w-max gap-4">{[...photos, ...photos].map((photo, i) => <PhotoCard key={`left-${i}`} photo={photo} duplicate={i >= photos.length} index={i} spacing="horizontal" />)}</div>
     </div>
