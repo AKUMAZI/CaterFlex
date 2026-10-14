@@ -19,7 +19,8 @@ const benefits = [
 
 export function OrderSection({ onOrder }: { onOrder: () => void }) {
   return (
-    <section className="relative overflow-visible bg-white pb-28 text-[#2A1B1F]">
+    <section className="relative overflow-visible bg-[#f8a5c1] pb-28 text-[#2A1B1F]">
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-[72%] bg-white [clip-path:ellipse(88%_72%_at_25%_0%)]" />
       <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-6 pb-20 pt-16 sm:pt-20 lg:grid-cols-[0.9fr_1.1fr] lg:gap-8 lg:px-10 lg:pb-28 lg:pt-24">
         <Reveal className="relative z-20 max-w-xl">
           <p className="mb-4 font-mono text-xs uppercase tracking-[0.24em] text-[#9C6670]">Made for your table</p>
@@ -41,8 +42,6 @@ export function OrderSection({ onOrder }: { onOrder: () => void }) {
           <div aria-hidden="true" className="absolute bottom-[22%] left-[5%] h-8 w-5 rounded-b-full rounded-t-md border-2 border-[#C9808C]/45" />
         </Reveal>
       </div>
-
-      <svg aria-hidden="true" className="absolute bottom-[-1px] left-0 h-24 w-full text-white" viewBox="0 0 1440 160" preserveAspectRatio="none"><path fill="currentColor" d="M0 104C245 182 399 54 648 76c256 23 397 77 792-38v122H0Z" /></svg>
 
       <div className="relative z-20 mx-auto -mb-44 grid max-w-6xl gap-4 px-6 sm:grid-cols-3 lg:gap-6">
         {benefits.map(({ title, description, icon: Icon, featured }, index) => <Reveal key={title} delay={index * 100} variant="scale" className="h-full"><article className={`flex h-full min-h-48 flex-col items-center justify-center rounded-2xl px-6 py-8 text-center shadow-[0_14px_35px_rgba(74,32,40,0.09)] ${featured ? 'bg-[#D13A47] text-white' : 'bg-white text-[#2A1B1F]'}`}><span className={`mb-4 grid size-11 place-items-center rounded-xl ${featured ? 'bg-white/95 text-[#D13A47]' : 'bg-[#FDE6E6] text-[#D13A47]'}`}><Icon aria-hidden="true" className="size-5" /></span><h3 className="font-heading text-base">{title}</h3><p className={`mt-2 max-w-[18rem] text-xs leading-5 ${featured ? 'text-white/85' : 'text-[#775D63]'}`}>{description}</p></article></Reveal>)}
