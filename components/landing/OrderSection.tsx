@@ -19,7 +19,7 @@ const benefits = [
 
 export function OrderSection({ onOrder }: { onOrder: () => void }) {
   return (
-    <section className="relative overflow-visible bg-[#FDE6E6] pb-28 text-[#2A1B1F]">
+    <section className="relative overflow-visible bg-white pb-28 text-[#2A1B1F]">
       <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-6 pb-20 pt-16 sm:pt-20 lg:grid-cols-[0.9fr_1.1fr] lg:gap-8 lg:px-10 lg:pb-28 lg:pt-24">
         <Reveal className="relative z-20 max-w-xl">
           <p className="mb-4 font-mono text-xs uppercase tracking-[0.24em] text-[#9C6670]">Made for your table</p>
