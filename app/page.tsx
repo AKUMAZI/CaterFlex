@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Reveal } from '@/components/landing/Reveal'
 import { Button } from '@/components/ui/button'
@@ -17,57 +17,61 @@ const photos = [
 ]
 
 const features = [
-  { title: 'Book with confidence', text: 'Send event or meal-prep requests in one place and avoid scheduling conflicts.' },
-  { title: 'Menus that fit you', text: 'Browse dishes with dietary and allergen details so every guest can enjoy the meal.' },
-  { title: 'Smarter meal planning', text: 'Get thoughtful dish suggestions shaped around your preferences and nutrition goals.' },
+  ['Event catering', 'Book events with date, guest count and menu in one request.'],
+  ['Weekly meal-prep', 'Recurring orders with availability checked against stock.'],
+  ['MacroFlex nutrition matching', 'Dishes matched to your calories and macros.'],
 ]
 
-function PhotoCard({ photo, duplicate = false, index, spacing }: { photo: typeof photos[number]; duplicate?: boolean; index: number; spacing?: 'vertical' | 'horizontal' }) {
-  return <div className={`shrink-0 overflow-hidden rounded-2xl shadow-xl ${spacing === 'vertical' ? 'pb-4' : spacing === 'horizontal' ? 'pr-4' : ''}`} style={{ transform: `rotate(${index % 2 ? 2 : -2}deg)` }} aria-hidden={duplicate}>
-    <Image src={photo.src} alt={duplicate ? '' : photo.alt} width={1000} height={1333} sizes="(min-width: 1024px) 18vw, 70vw" priority={!duplicate && index < 2} loading={!duplicate && index < 2 ? undefined : 'lazy'} className="h-[220px] w-[165px] object-cover lg:h-[300px] lg:w-[225px]" />
+function PhotoCard({ photo, duplicate = false, index, spacing = 'horizontal' }: { photo: typeof photos[number]; duplicate?: boolean; index: number; spacing?: 'vertical' | 'horizontal' }) {
+  return <div className={`shrink-0 ${spacing === 'vertical' ? 'pb-4' : 'pr-4'}`} aria-hidden={duplicate}>
+    <div className="overflow-hidden rounded-2xl shadow-xl">
+      <Image src={photo.src} alt={duplicate ? '' : photo.alt} width={640} height={448} sizes="(min-width: 1024px) 320px, 256px" priority={!duplicate && index < 2} className="h-44 w-64 object-cover opacity-40 transition-opacity duration-500 group-hover:opacity-90 lg:h-56 lg:w-80" />
+    </div>
   </div>
 }
 
 function Marquee() {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    let frame = 0
-    const onScroll = () => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => { if (ref.current) ref.current.style.transform = `translateY(${window.scrollY * 0.1}px)` })
-    }
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', onScroll) }
-  }, [])
-  const secondColumn = [...photos.slice(3), ...photos.slice(0, 3)]
-  return <div ref={ref} className="w-full transition-transform duration-100 ease-out">
-    <div className="hidden h-[640px] overflow-hidden motion-reduce:hidden lg:flex marquee-viewport">
-      <div className="marquee-up flex min-w-0 flex-1 flex-col">{[...photos, ...photos].map((photo, i) => <PhotoCard key={`a-${i}`} photo={photo} duplicate={i >= photos.length} index={i} spacing="vertical" />)}</div>
-      <div className="marquee-down flex min-w-0 flex-1 flex-col">{[...secondColumn, ...secondColumn].map((photo, i) => <PhotoCard key={`b-${i}`} photo={photo} duplicate={i >= photos.length} index={i} spacing="vertical" />)}</div>
+  const secondRow = [...photos.slice(3), ...photos.slice(0, 3)]
+  return <div className="pointer-events-none absolute inset-x-0 top-1/2 z-0 -translate-y-1/2 space-y-4 opacity-100" aria-hidden="true">
+    <div className="group marquee-row-viewport motion-reduce:hidden">
+      <div className="marquee-left flex w-max">{[...photos, ...photos].map((photo, i) => <PhotoCard key={`left-${i}`} photo={photo} duplicate={i >= photos.length} index={i} />)}</div>
     </div>
-    <div className="marquee-row-viewport flex h-[220px] overflow-hidden motion-reduce:hidden lg:hidden">
-      <div className="marquee-left flex shrink-0">{[...photos, ...photos].map((photo, i) => <PhotoCard key={`mobile-${i}`} photo={photo} duplicate={i >= photos.length} index={i} spacing="horizontal" />)}</div>
+    <div className="group marquee-row-viewport motion-reduce:hidden">
+      <div className="marquee-right flex w-max">{[...secondRow, ...secondRow].map((photo, i) => <PhotoCard key={`right-${i}`} photo={photo} duplicate={i >= photos.length} index={i} />)}</div>
     </div>
-    <div className="hidden grid-cols-2 gap-4 motion-reduce:grid">{photos.slice(0, 4).map((photo, i) => <PhotoCard key={photo.src} photo={photo} index={i} />)}</div>
+    <div className="hidden motion-reduce:flex">
+      {photos.slice(0, 3).map((photo, i) => <PhotoCard key={photo.src} photo={photo} index={i} />)}
+    </div>
   </div>
 }
 
 export default function Page() {
   const router = useRouter()
   const { setCurrentRole } = useAppState()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [bannerVisible, setBannerVisible] = useState(true)
   const enterAsCustomer = () => { setCurrentRole('customer'); router.push('/login') }
 
+  useEffect(() => {
+    try { setBannerVisible(sessionStorage.getItem('caterflex-banner-dismissed') !== '1') } catch { setBannerVisible(true) }
+  }, [])
+  const dismissBanner = () => { setBannerVisible(false); try { sessionStorage.setItem('caterflex-banner-dismissed', '1') } catch {} }
+
   return <main className="min-h-screen overflow-x-hidden bg-background text-foreground">
-    <section className="relative flex min-h-[min(760px,92vh)] flex-col overflow-hidden bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/background.webp')" }}>
-      <div className="absolute inset-0 bg-brand/65" aria-hidden="true" />
-      <div className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-5 lg:px-10 lg:py-7">
-        <header className="flex items-center justify-between"><img src="/logo.png" alt="CaterFlex" className="h-20 w-20 object-contain sm:h-24 sm:w-24" /><div className="flex items-center gap-3"><Button variant="outline" onClick={() => router.push('/login')} className="border-on-dark/50 bg-card/90 text-card-foreground hover:bg-card">Sign in</Button><Button onClick={() => router.push('/signup')} className="bg-primary text-primary-foreground hover:bg-primary/90">Sign up</Button></div></header>
-        <div className="flex flex-1 items-center py-12 lg:py-20"><div className="grid w-full items-center gap-12 lg:grid-cols-[1.05fr_.95fr] lg:gap-20"><div className="max-w-2xl"><p className="mb-5 font-mono text-xs uppercase tracking-[0.28em] text-on-dark-muted">Catering and meal-prep, made personal</p><h1 className="font-heading text-5xl leading-[1.04] tracking-tight text-foreground sm:text-6xl lg:text-8xl">Good food starts with a better plan.</h1><p className="mt-7 max-w-xl text-base leading-7 text-on-dark-muted sm:text-lg">CaterFlex helps you discover menus, plan memorable gatherings, and order meals that match your needs—all with a simple, organized experience.</p><div className="mt-9 flex flex-wrap items-center gap-4"><Button onClick={enterAsCustomer} className="h-12 bg-primary px-7 text-primary-foreground hover:bg-primary/90">Plan your meal</Button><a href="#how-it-works" className="text-sm font-semibold text-on-dark underline decoration-on-dark/40 underline-offset-4 hover:text-foreground">See how it works</a></div></div><Marquee /></div></div>
+    <header className="sticky top-0 z-20 border-b border-border/80 bg-card/95 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 lg:px-10">
+        <a href="#top" aria-label="CaterFlex home"><img src="/logo.png" alt="CaterFlex" className="size-12 object-contain" /></a>
+        <nav className="hidden items-center gap-8 md:flex" aria-label="Main navigation">{[['Services', '#services'], ['MacroFlex', '#macroflex'], ['How it works', '#how-it-works']].map(([label, href]) => <a key={href} href={href} className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-brand-deep">{label}</a>)}</nav>
+        <div className="hidden items-center gap-3 md:flex"><Button variant="ghost" onClick={() => router.push('/login')}>Log in</Button><Button onClick={() => router.push('/signup')}>Sign up</Button></div>
+        <Button variant="outline" size="icon" className="md:hidden" aria-label="Toggle menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><span className="text-lg">{menuOpen ? '×' : '☰'}</span></Button>
       </div>
-    </section>
-    <section className="tone-dark bg-brand"><div className="mx-auto max-w-7xl px-6 py-20 lg:px-10 lg:py-24"><Reveal><p className="font-mono text-xs uppercase tracking-[0.28em] text-primary-foreground/70">Good food, thoughtfully planned</p></Reveal><Reveal delay={100}><h2 className="mt-4 max-w-3xl font-heading text-4xl leading-tight sm:text-6xl">A taste of what we serve.</h2></Reveal><Reveal delay={200}><p className="mt-5 max-w-xl text-base leading-7 text-on-dark-muted">Flexible catering and meal-prep for the way you gather, eat, and live.</p></Reveal><div className="mt-14 grid gap-8 border-t border-on-dark/20 pt-8 sm:grid-cols-3">{['Event catering', 'Weekly meal-prep', 'MacroFlex nutrition matching'].map((item, i) => <Reveal key={item} delay={i * 120} variant="fade"><p className="font-heading text-xl">{item}</p></Reveal>)}</div></div></section>
-    <section id="how-it-works" className="bg-card text-card-foreground"><div className="mx-auto max-w-7xl px-6 py-20 lg:px-10 lg:py-28"><div className="max-w-2xl"><Reveal><p className="font-mono text-xs uppercase tracking-[0.28em] text-primary">One place for every occasion</p></Reveal><Reveal delay={100}><h2 className="mt-4 font-heading text-4xl leading-tight sm:text-5xl">From first idea to final plate.</h2></Reveal><Reveal delay={200}><p className="mt-5 text-base leading-7 text-muted-foreground">Whether you are arranging a celebration or planning balanced meals for the week, CaterFlex keeps the details clear and the food at the center.</p></Reveal></div><div className="mt-14 grid gap-6 md:grid-cols-3">{features.map((feature, i) => <Reveal key={feature.title} delay={i * 150} variant="scale"><article className="border-t-2 border-primary pt-5"><h3 className="font-heading text-xl">{feature.title}</h3><p className="mt-3 leading-7 text-muted-foreground">{feature.text}</p></article></Reveal>)}</div></div></section>
-    <section className="border-t border-border bg-card text-card-foreground"><div className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-16 lg:flex-row lg:items-center lg:justify-between lg:px-10"><Reveal><div><p className="font-mono text-xs uppercase tracking-[0.28em] text-primary">Ready when you are</p><h2 className="mt-3 font-heading text-3xl sm:text-4xl">Let&apos;s plan something delicious.</h2></div></Reveal><Button onClick={enterAsCustomer} className="h-12 w-fit bg-primary px-7 text-primary-foreground hover:bg-primary/90">Get started</Button></div></section>
+      {menuOpen && <nav className="border-t border-border bg-card px-6 py-4 md:hidden" aria-label="Mobile navigation">{[['Services', '#services'], ['MacroFlex', '#macroflex'], ['How it works', '#how-it-works']].map(([label, href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)} className="block py-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{label}</a>)}<div className="flex gap-3 border-t border-border pt-3"><Button variant="ghost" onClick={() => router.push('/login')}>Log in</Button><Button onClick={() => router.push('/signup')}>Sign up</Button></div></nav>}
+    </header>
+    {bannerVisible && <div className="bg-brand-deep px-6 py-3 text-center text-sm text-primary-foreground"><div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-3"><span>Now taking event catering and weekly meal-prep bookings</span><Button size="sm" variant="secondary" onClick={enterAsCustomer}>Book now</Button><button onClick={dismissBanner} aria-label="Dismiss" className="rounded-full p-1 text-primary-foreground hover:bg-primary-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground">×</button></div></div>}
+    <section id="top" className="relative isolate flex min-h-[640px] items-center overflow-hidden bg-gradient-to-br from-primary-soft to-background"><Marquee /><div className="relative z-10 mx-auto w-full max-w-7xl px-6 py-24 lg:px-10"><Reveal><p className="mb-5 font-mono text-xs uppercase tracking-[0.28em] text-brand-deep">Catering and meal-prep, made personal</p></Reveal><Reveal delay={100}><h1 className="max-w-3xl font-heading text-5xl leading-[1.04] tracking-tight text-foreground sm:text-6xl lg:text-8xl">Good food starts with a better plan.</h1></Reveal><Reveal delay={200}><p className="mt-7 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">CaterFlex helps you discover menus, plan memorable gatherings, and order meals that match your needs—all with a simple, organized experience.</p></Reveal><Reveal delay={300}><div className="mt-9 flex flex-wrap items-center gap-4"><Button onClick={enterAsCustomer} className="h-12 px-7">Plan your meal</Button><a href="#how-it-works" className="text-sm font-semibold text-brand-deep underline underline-offset-4">See how it works</a></div></Reveal></div></section>
+    <section className="bg-card px-6 py-20 text-center lg:py-28"><Reveal><h2 className="mx-auto max-w-3xl font-heading text-4xl leading-tight text-brand-deep sm:text-6xl">Catering and meal-prep, planned in one place</h2></Reveal><Reveal delay={120}><p className="mx-auto mt-5 max-w-xl leading-7 text-muted-foreground">From gatherings to weekly routines, keep your menu, timing, and nutrition goals moving together.</p></Reveal></section>
+    <section id="services" className="bg-background px-6 py-20 lg:py-28"><div className="mx-auto grid max-w-7xl gap-6 md:grid-cols-3">{features.map(([title, text], i) => <Reveal key={title} delay={i * 120} variant="scale"><article className="group overflow-hidden rounded-2xl border border-border bg-card transition-transform hover:-translate-y-1 hover:shadow-lg"><Image src={photos[i].src} alt={photos[i].alt} width={640} height={448} className="h-56 w-full object-cover" /><div className="p-6"><h3 className="font-heading text-xl">{title}</h3><p className="mt-3 leading-7 text-muted-foreground">{text}</p></div></article></Reveal>)}</div></section>
+    <section id="how-it-works" className="bg-primary-soft px-6 py-16"><div className="mx-auto flex max-w-7xl flex-col gap-6 sm:flex-row sm:items-center sm:justify-between"><Reveal><h2 className="font-heading text-3xl text-brand-deep sm:text-4xl">Let&apos;s plan something delicious.</h2></Reveal><Button onClick={enterAsCustomer} className="w-fit">Get started</Button></div></section>
+    <footer className="bg-card px-6 py-10"><div className="mx-auto flex max-w-7xl flex-col gap-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><img src="/logo.png" alt="CaterFlex" className="size-12 object-contain" /><p>© {new Date().getFullYear()} CaterFlex. All rights reserved.</p><div className="flex gap-5"><a href="/login" className="hover:text-foreground">Log in</a><a href="/signup" className="hover:text-foreground">Sign up</a></div></div></footer>
   </main>
 }

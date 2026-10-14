@@ -75,6 +75,8 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-brand-deep: var(--brand-deep);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-surface: var(--surface);
@@ -97,93 +99,100 @@
 
 :root {
   color-scheme: light;
-  /* Landing / legacy shell */
-  --background: #7B2525;
-  --foreground: #FFFFFF;
-  --brand: #6E2020;
-  /* Cream dashboard surface */
-  --surface: #EEE0CC;
-  --surface-foreground: #3D3630;
-  --surface-muted-foreground: #6B635B;
-  /* Light cards on cream (dark text) */
-  --card: #FAF6F0;
-  --card-foreground: #3D3630;
-  --card-muted-foreground: #6B635B;
-  --popover: #FAF6F0;
-  --popover-foreground: #3D3630;
-  --primary: #C56B4A;
+  --primary: #D13A47;
   --primary-foreground: #FFFFFF;
-  --secondary: #70805D;
-  --secondary-foreground: #FFFFFF;
-  --muted: #E8DFD0;
-  --muted-foreground: #6B635B;
-  --accent: #EEE0CC;
-  --accent-foreground: #3D3630;
-  --destructive: #DC2626;
-  --border: #2D2D2D;
-  --input: #FAF6F0;
-  --ring: #2D2D2D;
-  --chart-1: #BA6A4C;
-  --chart-2: #607456;
-  --chart-3: #EEE0CC;
-  --chart-4: #8B5A42;
-  --chart-5: #A64545;
+  --primary-hover: #B82E3B;
+  --primary-soft: #FDE3E3;
+  --background: #FFF7F6;
+  --foreground: #2B1D1F;
+  --brand: #8E1F2C;
+  --brand-deep: #8E1F2C;
+  --surface: #FFF7F6;
+  --surface-foreground: #2B1D1F;
+  --surface-muted-foreground: #6E5C5F;
+  --card: #FFFFFF;
+  --card-foreground: #2B1D1F;
+  --card-muted-foreground: #6E5C5F;
+  --popover: #FFFFFF;
+  --popover-foreground: #2B1D1F;
+  --secondary: #FDE3E3;
+  --secondary-foreground: #8E1F2C;
+  --muted: #FDE3E3;
+  --muted-foreground: #6E5C5F;
+  --accent: #FDE3E3;
+  --accent-foreground: #2B1D1F;
+  --destructive: #9B1C2C;
+  --success: #2F7D4F;
+  --warning: #B7791F;
+  --border: #F3D6D6;
+  --input: #FFFFFF;
+  --ring: #D13A47;
+  --chart-1: #D13A47;
+  --chart-2: #8E1F2C;
+  --chart-3: #FDE3E3;
+  --chart-4: #B82E3B;
+  --chart-5: #9B1C2C;
   --radius: 0.625rem;
-  --sidebar: #6B1F1F;
+  --sidebar: #8E1F2C;
   --sidebar-foreground: #FFFFFF;
-  --sidebar-primary: #BA6A4C;
+  --sidebar-primary: #D13A47;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #EEE0CC;
-  --sidebar-accent-foreground: #7B2525;
-  --sidebar-border: #1A1A1A;
-  --sidebar-ring: #BA6A4C;
+  --sidebar-accent: #FDE3E3;
+  --sidebar-accent-foreground: #8E1F2C;
+  --sidebar-border: #F3D6D6;
+  --sidebar-ring: #D13A47;
 }
 
 .dark {
-  color-scheme: dark;
-  --background: #7B2525;
-  --foreground: #FFFFFF;
-  --brand: #6E2020;
-  --surface: #EEE0CC;
-  --surface-foreground: #3D3630;
-  --surface-muted-foreground: #6B635B;
-  --card: #FAF6F0;
-  --card-foreground: #3D3630;
-  --card-muted-foreground: #6B635B;
-  --popover: #FAF6F0;
-  --popover-foreground: #3D3630;
-  --primary: #C56B4A;
+  color-scheme: light;
+  --background: #FFF7F6;
+  --foreground: #2B1D1F;
+  --brand: #8E1F2C;
+  --brand-deep: #8E1F2C;
+  --surface: #FFF7F6;
+  --surface-foreground: #2B1D1F;
+  --surface-muted-foreground: #6E5C5F;
+  --card: #FFFFFF;
+  --card-foreground: #2B1D1F;
+  --card-muted-foreground: #6E5C5F;
+  --popover: #FFFFFF;
+  --popover-foreground: #2B1D1F;
+  --primary: #D13A47;
   --primary-foreground: #FFFFFF;
-  --secondary: #70805D;
-  --secondary-foreground: #FFFFFF;
-  --muted: #E8DFD0;
-  --muted-foreground: #6B635B;
-  --accent: #EEE0CC;
-  --accent-foreground: #3D3630;
-  --destructive: #DC2626;
-  --border: #2D2D2D;
-  --input: #FAF6F0;
-  --ring: #2D2D2D;
-  --chart-1: #BA6A4C;
-  --chart-2: #607456;
-  --chart-3: #EEE0CC;
-  --chart-4: #8B5A42;
-  --chart-5: #A64545;
-  --sidebar: #6B1F1F;
+  --primary-hover: #B82E3B;
+  --primary-soft: #FDE3E3;
+  --secondary: #FDE3E3;
+  --secondary-foreground: #8E1F2C;
+  --muted: #FDE3E3;
+  --muted-foreground: #6E5C5F;
+  --accent: #FDE3E3;
+  --accent-foreground: #2B1D1F;
+  --destructive: #9B1C2C;
+  --success: #2F7D4F;
+  --warning: #B7791F;
+  --border: #F3D6D6;
+  --input: #FFFFFF;
+  --ring: #D13A47;
+  --chart-1: #D13A47;
+  --chart-2: #8E1F2C;
+  --chart-3: #FDE3E3;
+  --chart-4: #B82E3B;
+  --chart-5: #9B1C2C;
+  --sidebar: #8E1F2C;
   --sidebar-foreground: #FFFFFF;
-  --sidebar-primary: #BA6A4C;
+  --sidebar-primary: #D13A47;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #EEE0CC;
-  --sidebar-accent-foreground: #7B2525;
-  --sidebar-border: #1A1A1A;
-  --sidebar-ring: #BA6A4C;
+  --sidebar-accent: #FDE3E3;
+  --sidebar-accent-foreground: #8E1F2C;
+  --sidebar-border: #F3D6D6;
+  --sidebar-ring: #D13A47;
 }
 
 /* Always use light mode - no dark mode overrides */
 
 @layer utilities {
   .text-on-dark {
-    color: #ffffff;
+    color: var(--primary-foreground);
   }
   .text-on-dark-muted {
     color: rgb(255 255 255 / 0.85);
@@ -265,34 +274,26 @@
   }
 }
 
-.marquee-viewport {
-  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
-  -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
-}
-
 .marquee-row-viewport {
   mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  background: linear-gradient(to right, var(--background), transparent 35%, transparent 65%, var(--background));
 }
 
-.marquee-up,
-.marquee-down,
-.marquee-left {
+.marquee-left,
+.marquee-right {
   will-change: transform;
 }
 
-.marquee-up { animation: marquee-up 40s linear infinite; }
-.marquee-down { animation: marquee-down 55s linear infinite; }
-.marquee-left { animation: marquee-left 35s linear infinite; }
+.marquee-left { animation: marquee-left 45s linear infinite; }
+.marquee-right { animation: marquee-right 60s linear infinite; }
+.marquee-row-viewport:hover .marquee-left,
+.marquee-row-viewport:hover .marquee-right { animation-play-state: paused; }
 
-.marquee-viewport:hover .marquee-up,
-.marquee-viewport:hover .marquee-down { animation-play-state: paused; }
-
-@keyframes marquee-up { from { transform: translateY(0); } to { transform: translateY(-50%); } }
-@keyframes marquee-down { from { transform: translateY(-50%); } to { transform: translateY(0); } }
 @keyframes marquee-left { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes marquee-right { from { transform: translateX(-50%); } to { transform: translateX(0); } }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .marquee-up, .marquee-down, .marquee-left { animation: none; transform: none; }
+  .marquee-left, .marquee-right { animation: none; transform: none; }
 }
