@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Reveal } from '@/components/landing/Reveal'
 import { Button } from '@/components/ui/button'
-import { useAppState } from '@/lib/state'
 
 const photos = [
   { src: '/landing/1-salad-rice-bites.webp', alt: 'Party trays of fruit salad, garlic rice and carrot canapés' },
@@ -47,7 +46,6 @@ function Marquee() {
 
 export default function Page() {
   const router = useRouter()
-  const { setCurrentRole } = useAppState()
   const [menuOpen, setMenuOpen] = useState(false)
   const [bannerVisible, setBannerVisible] = useState(true)
   const enterAsCustomer = () => { setCurrentRole('customer'); router.push('/login') }
