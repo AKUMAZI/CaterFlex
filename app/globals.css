@@ -274,11 +274,10 @@
   }
 }
 
-.marquee-row-viewport {
-  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
-  background: linear-gradient(to right, var(--background), transparent 35%, transparent 65%, var(--background));
-}
+  .marquee-row-viewport {
+    overflow: hidden;
+    mask-image: linear-gradient(to right, #fde6e6 0%, transparent 7%, black 15%, black 85%, transparent 93%, #fde6e6 100%);
+  }
 
 .marquee-left,
 .marquee-right {
