@@ -275,7 +275,28 @@
 }
 
   .marquee-row-viewport {
+  position: relative;
   overflow: hidden;
+}
+
+.marquee-row-viewport::before,
+.marquee-row-viewport::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: clamp(2rem, 8vw, 6rem);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.marquee-row-viewport::before {
+  left: 0;
+  background: linear-gradient(to right, #fde6e6, rgb(253 230 230 / 0));
+}
+
+.marquee-row-viewport::after {
+  right: 0;
+  background: linear-gradient(to left, #fde6e6, rgb(253 230 230 / 0));
 }
 
 .marquee-left,
