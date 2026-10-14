@@ -284,8 +284,8 @@
   will-change: transform;
 }
 
-.marquee-left { animation: marquee-left 45s linear infinite; }
-.marquee-right { animation: marquee-right 60s linear infinite; }
+.marquee-left { animation: marquee-left 40s linear infinite; }
+.marquee-right { animation: marquee-right 40s linear infinite; }
 .marquee-row-viewport:hover .marquee-left,
 .marquee-row-viewport:hover .marquee-right { animation-play-state: paused; }
 
