@@ -260,4 +260,39 @@
   html::-webkit-scrollbar {
     display: none;
   }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+.marquee-viewport {
+  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+}
+
+.marquee-row-viewport {
+  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+
+.marquee-up,
+.marquee-down,
+.marquee-left {
+  will-change: transform;
+}
+
+.marquee-up { animation: marquee-up 40s linear infinite; }
+.marquee-down { animation: marquee-down 55s linear infinite; }
+.marquee-left { animation: marquee-left 35s linear infinite; }
+
+.marquee-viewport:hover .marquee-up,
+.marquee-viewport:hover .marquee-down { animation-play-state: paused; }
+
+@keyframes marquee-up { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+@keyframes marquee-down { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+@keyframes marquee-left { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .marquee-up, .marquee-down, .marquee-left { animation: none; transform: none; }
 }
