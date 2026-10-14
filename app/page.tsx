@@ -22,8 +22,8 @@ const features = [
   { title: 'Smarter meal planning', text: 'Get thoughtful dish suggestions shaped around your preferences and nutrition goals.' },
 ]
 
-function PhotoCard({ photo, duplicate = false, index }: { photo: typeof photos[number]; duplicate?: boolean; index: number }) {
-  return <div className="shrink-0 overflow-hidden rounded-2xl shadow-xl" style={{ transform: `rotate(${index % 2 ? 2 : -2}deg)` }} aria-hidden={duplicate}>
+function PhotoCard({ photo, duplicate = false, index, spacing }: { photo: typeof photos[number]; duplicate?: boolean; index: number; spacing?: 'vertical' | 'horizontal' }) {
+  return <div className={`shrink-0 overflow-hidden rounded-2xl shadow-xl ${spacing === 'vertical' ? 'pb-4' : spacing === 'horizontal' ? 'pr-4' : ''}`} style={{ transform: `rotate(${index % 2 ? 2 : -2}deg)` }} aria-hidden={duplicate}>
     <Image src={photo.src} alt={duplicate ? '' : photo.alt} width={1000} height={1333} sizes="(min-width: 1024px) 18vw, 70vw" priority={!duplicate && index < 2} loading={!duplicate && index < 2 ? undefined : 'lazy'} className="h-[220px] w-[165px] object-cover lg:h-[300px] lg:w-[225px]" />
   </div>
 }
@@ -42,12 +42,12 @@ function Marquee() {
   }, [])
   const secondColumn = [...photos.slice(3), ...photos.slice(0, 3)]
   return <div ref={ref} className="w-full transition-transform duration-100 ease-out">
-    <div className="hidden h-[640px] gap-4 overflow-hidden lg:flex marquee-viewport">
-      <div className="marquee-up flex min-w-0 flex-1 flex-col gap-4">{[...photos, ...photos].map((photo, i) => <PhotoCard key={`a-${i}`} photo={photo} duplicate={i >= photos.length} index={i} />)}</div>
-      <div className="marquee-down flex min-w-0 flex-1 flex-col gap-4">{[...secondColumn, ...secondColumn].map((photo, i) => <PhotoCard key={`b-${i}`} photo={photo} duplicate={i >= photos.length} index={i} />)}</div>
+    <div className="hidden h-[640px] overflow-hidden motion-reduce:hidden lg:flex marquee-viewport">
+      <div className="marquee-up flex min-w-0 flex-1 flex-col">{[...photos, ...photos].map((photo, i) => <PhotoCard key={`a-${i}`} photo={photo} duplicate={i >= photos.length} index={i} spacing="vertical" />)}</div>
+      <div className="marquee-down flex min-w-0 flex-1 flex-col">{[...secondColumn, ...secondColumn].map((photo, i) => <PhotoCard key={`b-${i}`} photo={photo} duplicate={i >= photos.length} index={i} spacing="vertical" />)}</div>
     </div>
-    <div className="marquee-row-viewport flex h-[220px] gap-4 overflow-hidden lg:hidden">
-      <div className="marquee-left flex shrink-0 gap-4">{[...photos, ...photos].map((photo, i) => <PhotoCard key={`mobile-${i}`} photo={photo} duplicate={i >= photos.length} index={i} />)}</div>
+    <div className="marquee-row-viewport flex h-[220px] overflow-hidden motion-reduce:hidden lg:hidden">
+      <div className="marquee-left flex shrink-0">{[...photos, ...photos].map((photo, i) => <PhotoCard key={`mobile-${i}`} photo={photo} duplicate={i >= photos.length} index={i} spacing="horizontal" />)}</div>
     </div>
     <div className="hidden grid-cols-2 gap-4 motion-reduce:grid">{photos.slice(0, 4).map((photo, i) => <PhotoCard key={photo.src} photo={photo} index={i} />)}</div>
   </div>
